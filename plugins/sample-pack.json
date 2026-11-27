@@ -1,0 +1,24 @@
+{
+  "manifest_version": "1.0",
+  "plugin_id": "castex.official.starter",
+  "name": "Castex Starter & Fandub Pack",
+  "author": "Castex Community",
+  "description": "Default remote catalog and verified community fandub sync routes.",
+  "supported_types": ["anime", "movie", "series"],
+  "stremio_addons": [
+    "https://v3-cinemeta.strem.io/manifest.json"
+  ],
+  "hybrid_dub_routes": [
+    {
+      "content_id": "tt0000000",
+      "title": "Sample Anime / Movie",
+      "season": 1,
+      "episode": 1,
+      "dub_language": "Hindi (Fandub)",
+      "creator_name": "Indie Dubber",
+      "source_type": "youtube_embed",
+      "external_url": "https://www.youtube.com/watch?v=VIDEO_ID",
+      "audio_offset_ms": 0
+    }
+  ]
+}
