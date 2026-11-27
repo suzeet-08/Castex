@@ -1,0 +1,58 @@
+name: Build Castex APKs
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout Castex Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Generate Android Project Files
+        run: |
+          cp pubspec.yaml pubspec.yaml.bak
+          cp lib/main.dart main.dart.bak
+          flutter create --org com.castex --project-name castex --platforms android .
+          mv pubspec.yaml.bak pubspec.yaml
+          mv main.dart.bak lib/main.dart
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+
+      - name: Install Packages
+        run: flutter pub get
+
+      - name: Build Castex Stable & Lite APKs
+        run: |
+          flutter build apk --release --split-per-abi
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/app/outputs/flutter-apk/Castex-Stable-v1.0.0.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk build/app/outputs/flutter-apk/Castex-Lite-v1.0.0.apk
+
+      - name: Upload Castex APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Castex-v1.0.0-APKs
+          path: |
+            app/build/app/outputs/flutter-apk/Castex-Stable-v1.0.0.apk
+            app/build/app/outputs/flutter-apk/Castex-Lite-v1.0.0.apk
