@@ -44,7 +44,7 @@ class CastexHomeShell extends StatefulWidget {
   const CastexHomeShell({super.key});
 
   @override
-  State<CastexHomeShell> createState() => _CastexHomeShellState();
+  State createState() => _CastexHomeShellState();
 }
 
 class _CastexHomeShellState extends State<CastexHomeShell> {
@@ -53,12 +53,12 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
   bool _loading = true;
   bool _hasUnreadNotice = true;
 
-  Map<String, dynamic> _remoteConfig = {};
-  List<String> _pluginUrls = [];
-  List> _loadedPlugins = [];
-  List> _fandubRoutes = [];
-  List> _movies = [];
-  List> _series = [];
+  Map _remoteConfig = {};
+  List _pluginUrls = [];
+  List _loadedPlugins = [];
+  List _fandubRoutes = [];
+  List _movies = [];
+  List _series = [];
   String _kotosubUrl = '';
   String _searchQuery = '';
 
@@ -68,12 +68,12 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     _initCastex();
   }
 
-  Future<void> _initCastex() async {
+  Future _initCastex() async {
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
     _fanMode = prefs.getBool('fan_mode') ?? true;
     _kotosubUrl = prefs.getString('kotosub_url') ?? '';
-    _pluginUrls = prefs.getStringList('plugin_urls') ?? [];
+    _pluginUrls = List.from(prefs.getStringList('plugin_urls') ?? []);
 
     await _fetchRemoteConfig(prefs);
     await _loadAllPlugins();
@@ -84,48 +84,60 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     }
   }
 
-  Future<void> _fetchRemoteConfig(SharedPreferences prefs) async {
+  Future _fetchRemoteConfig(SharedPreferences prefs) async {
     try {
       final res = await http
           .get(Uri.parse(kRemoteConfigUrl))
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        _remoteConfig = data;
-        final defaults = (data['default_catalogs'] as List?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            [];
-        for (final url in defaults) {
-          if (!_pluginUrls.contains(url)) {
-            _pluginUrls.add(url);
+        final data = jsonDecode(res.body);
+        if (data is Map) {
+          _remoteConfig = data;
+          final rawDefaults = data['default_catalogs'];
+          if (rawDefaults is List) {
+            for (final item in rawDefaults) {
+              final url = item.toString();
+              if (url.isNotEmpty && !_pluginUrls.contains(url)) {
+                _pluginUrls.add(url);
+              }
+            }
+          }
+          await prefs.setStringList(
+            'plugin_urls',
+            _pluginUrls.map((e) => e.toString()).toList(),
+          );
+
+          final ann = data['announcement'];
+          if (ann is Map) {
+            final annId = (ann['id'] ?? '').toString();
+            final seenId = prefs.getString('seen_ann_id') ?? '';
+            _hasUnreadNotice = annId.isNotEmpty && annId != seenId;
           }
         }
-        await prefs.setStringList('plugin_urls', _pluginUrls);
-
-        final annId = (data['announcement']?['id'] ?? '').toString();
-        final seenId = prefs.getString('seen_ann_id') ?? '';
-        _hasUnreadNotice = annId.isNotEmpty && annId != seenId;
       }
     } catch (_) {}
   }
 
-  Future<void> _loadAllPlugins() async {
-    final loaded = >[];
-    final routes = >[];
+  Future _loadAllPlugins() async {
+    final loaded = [];
+    final routes = [];
 
-    for (final url in _pluginUrls) {
+    for (final rawUrl in _pluginUrls) {
+      final url = rawUrl.toString();
       try {
         final res = await http
             .get(Uri.parse(url))
             .timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
-          final json = jsonDecode(res.body) as Map<String, dynamic>;
-          loaded.add({'url': url, 'data': json});
-          if (json['hybrid_dub_routes'] is List) {
-            for (final item in json['hybrid_dub_routes']) {
-              if (item is Map<String, dynamic>) {
-                routes.add(item);
+          final parsed = jsonDecode(res.body);
+          if (parsed is Map) {
+            loaded.add({'url': url, 'data': parsed});
+            final rawRoutes = parsed['hybrid_dub_routes'];
+            if (rawRoutes is List) {
+              for (final item in rawRoutes) {
+                if (item is Map) {
+                  routes.add(item);
+                }
               }
             }
           }
@@ -137,14 +149,16 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     _fandubRoutes = routes;
   }
 
-  Future<void> _fetchDefaultCatalogs() async {
+  Future _fetchDefaultCatalogs() async {
     try {
       final mRes = await http
           .get(Uri.parse('https://v3-cinemeta.strem.io/catalog/movie/top.json'))
           .timeout(const Duration(seconds: 8));
       if (mRes.statusCode == 200) {
-        final metas = (jsonDecode(mRes.body)['metas'] as List?) ?? [];
-        _movies = metas.take(24).cast>().toList();
+        final body = jsonDecode(mRes.body);
+        if (body is Map && body['metas'] is List) {
+          _movies = (body['metas'] as List).take(24).toList();
+        }
       }
     } catch (_) {}
 
@@ -153,58 +167,72 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
           .get(Uri.parse('https://v3-cinemeta.strem.io/catalog/series/top.json'))
           .timeout(const Duration(seconds: 8));
       if (sRes.statusCode == 200) {
-        final metas = (jsonDecode(sRes.body)['metas'] as List?) ?? [];
-        _series = metas.take(24).cast>().toList();
+        final body = jsonDecode(sRes.body);
+        if (body is Map && body['metas'] is List) {
+          _series = (body['metas'] as List).take(24).toList();
+        }
       }
     } catch (_) {}
   }
 
-  Future<void> _toggleMode(bool val) async {
+  Future _toggleMode(bool val) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('fan_mode', val);
     setState(() => _fanMode = val);
   }
 
-  Future<void> _addPluginUrl(String rawUrl) async {
+  Future _addPluginUrl(String rawUrl) async {
     final clean = rawUrl.trim();
     if (!clean.startsWith('http')) return;
     if (!_pluginUrls.contains(clean)) {
       final prefs = await SharedPreferences.getInstance();
       _pluginUrls.add(clean);
-      await prefs.setStringList('plugin_urls', _pluginUrls);
+      await prefs.setStringList(
+        'plugin_urls',
+        _pluginUrls.map((e) => e.toString()).toList(),
+      );
       await _loadAllPlugins();
       if (mounted) setState(() {});
     }
   }
 
-  Future<void> _removePluginUrl(String url) async {
+  Future _removePluginUrl(String url) async {
     final prefs = await SharedPreferences.getInstance();
     _pluginUrls.remove(url);
-    await prefs.setStringList('plugin_urls', _pluginUrls);
+    await prefs.setStringList(
+      'plugin_urls',
+      _pluginUrls.map((e) => e.toString()).toList(),
+    );
     await _loadAllPlugins();
     if (mounted) setState(() {});
   }
 
   void _showNotificationDialog() async {
-    final ann = _remoteConfig['announcement'] as Map<String, dynamic>?;
+    final ann = _remoteConfig['announcement'];
     final prefs = await SharedPreferences.getInstance();
-    if (ann != null && ann['id'] != null) {
+    if (ann is Map && ann['id'] != null) {
       await prefs.setString('seen_ann_id', ann['id'].toString());
     }
     if (!mounted) return;
     setState(() => _hasUnreadNotice = false);
+
+    final titleText = (ann is Map && ann['title'] != null)
+        ? ann['title'].toString()
+        : 'Castex Updates';
+    final msgText = (ann is Map && ann['message'] != null)
+        ? ann['message'].toString()
+        : 'No new announcements right now. Enjoy ad-free streaming!';
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF101014),
         title: Text(
-          ann?['title']?.toString() ?? 'Castex Updates',
+          titleText,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         content: Text(
-          ann?['message']?.toString() ??
-              'No new announcements right now. Enjoy ad-free streaming!',
+          msgText,
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -217,7 +245,7 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     );
   }
 
-  void _openDetailSheet(Map<String, dynamic> item) {
+  void _openDetailSheet(Map item) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -346,12 +374,12 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     final filteredMovies = q.isEmpty
         ? _movies
         : _movies
-            .where((m) => (m['name'] ?? '').toString().toLowerCase().contains(q))
+            .where((m) => (m is Map ? (m['name'] ?? '') : '').toString().toLowerCase().contains(q))
             .toList();
     final filteredSeries = q.isEmpty
         ? _series
         : _series
-            .where((s) => (s['name'] ?? '').toString().toLowerCase().contains(q))
+            .where((s) => (s is Map ? (s['name'] ?? '') : '').toString().toLowerCase().contains(q))
             .toList();
 
     return RefreshIndicator(
@@ -388,10 +416,11 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
                 scrollDirection: Axis.horizontal,
                 itemCount: _fandubRoutes.length,
                 itemBuilder: (ctx, i) {
-                  final r = _fandubRoutes[i];
+                  final rawR = _fandubRoutes[i];
+                  final r = rawR is Map ? rawR : {};
                   return GestureDetector(
                     onTap: () async {
-                      final u = Uri.tryParse(r['external_url']?.toString() ?? '');
+                      final u = Uri.tryParse((r['external_url'] ?? '').toString());
                       if (u != null) {
                         await launchUrl(u, mode: LaunchMode.externalApplication);
                       }
@@ -412,7 +441,7 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            r['title']?.toString() ?? 'Fandub',
+                            (r['title'] ?? 'Fandub').toString(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.bold),
@@ -444,7 +473,7 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     );
   }
 
-  Widget _buildPosterSection(String title, List> items) {
+  Widget _buildPosterSection(String title, List items) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -465,8 +494,9 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
               itemBuilder: (ctx, i) {
-                final item = items[i];
-                final poster = item['poster']?.toString() ?? '';
+                final rawItem = items[i];
+                final item = rawItem is Map ? rawItem : {};
+                final poster = (item['poster'] ?? '').toString();
                 return GestureDetector(
                   onTap: () => _openDetailSheet(item),
                   child: Container(
@@ -496,7 +526,7 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          item['name']?.toString() ?? 'Untitled',
+                          (item['name'] ?? 'Untitled').toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -568,11 +598,16 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
         const SizedBox(height: 10),
-        ..._pluginUrls.map((u) {
-          final match = _loadedPlugins.where((p) => p['url'] == u).toList();
-          final name = match.isNotEmpty
-              ? (match.first['data']['name']?.toString() ?? 'Custom Plugin')
-              : 'Remote JSON / Addon';
+        ..._pluginUrls.map((rawU) {
+          final u = rawU.toString();
+          final match = _loadedPlugins.where((p) => p is Map && p['url'] == u).toList();
+          String name = 'Remote JSON / Addon';
+          if (match.isNotEmpty) {
+            final d = (match.first as Map)['data'];
+            if (d is Map && d['name'] != null) {
+              name = d['name'].toString();
+            }
+          }
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(12),
@@ -612,7 +647,8 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
   }
 
   Widget _buildCommunityTab() {
-    final links = (_remoteConfig['community_links'] as Map<String, dynamic>?) ?? {};
+    final rawLinks = _remoteConfig['community_links'];
+    final links = rawLinks is Map ? rawLinks : {};
     final kotoCtrl = TextEditingController(text: _kotosubUrl);
 
     return ListView(
@@ -672,10 +708,10 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 10),
-        _linkTile('GitHub Repository (GPLv3)', links['github']?.toString() ?? ''),
-        _linkTile('Discord Dev & Beta HQ', links['discord']?.toString() ?? ''),
-        _linkTile('Public Instagram Updates', links['instagram']?.toString() ?? ''),
-        _linkTile('Companion Website', links['website']?.toString() ?? ''),
+        _linkTile('GitHub Repository (GPLv3)', (links['github'] ?? '').toString()),
+        _linkTile('Discord Dev & Beta HQ', (links['discord'] ?? '').toString()),
+        _linkTile('Public Instagram Updates', (links['instagram'] ?? '').toString()),
+        _linkTile('Companion Website', (links['website'] ?? '').toString()),
         const SizedBox(height: 20),
         const Text(
           'Castex v1.0.0 • Open-Source & Ad-Free\nCastex does not host any media files.',
@@ -708,10 +744,10 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
 }
 
 class MediaDetailSheet extends StatefulWidget {
-  final Map<String, dynamic> item;
+  final Map item;
   final bool fanMode;
-  final List> fandubRoutes;
-  final List<String> pluginUrls;
+  final List fandubRoutes;
+  final List pluginUrls;
   final String kotosubUrl;
 
   const MediaDetailSheet({
@@ -724,13 +760,13 @@ class MediaDetailSheet extends StatefulWidget {
   });
 
   @override
-  State<MediaDetailSheet> createState() => _MediaDetailSheetState();
+  State createState() => _MediaDetailSheetState();
 }
 
 class _MediaDetailSheetState extends State<MediaDetailSheet> {
   String _selectedDubLayer = 'Original Audio';
   String _selectedSubLang = 'Hinglish (KotoSub AI)';
-  List> _streams = [];
+  List _streams = [];
   bool _fetchingStreams = false;
 
   @override
@@ -739,15 +775,16 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
     _resolveAddonStreams();
   }
 
-  Future<void> _resolveAddonStreams() async {
-    final id = widget.item['id']?.toString() ?? '';
-    final type = widget.item['type']?.toString() ?? 'movie';
+  Future _resolveAddonStreams() async {
+    final id = (widget.item['id'] ?? '').toString();
+    final type = (widget.item['type'] ?? 'movie').toString();
     if (id.isEmpty) return;
 
     setState(() => _fetchingStreams = true);
-    final found = >[];
+    final found = [];
 
-    for (final pUrl in widget.pluginUrls) {
+    for (final rawUrl in widget.pluginUrls) {
+      final pUrl = rawUrl.toString();
       if (pUrl.endsWith('/manifest.json')) {
         final base = pUrl.substring(0, pUrl.length - '/manifest.json'.length);
         final streamApi = type == 'movie'
@@ -758,10 +795,12 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
               .get(Uri.parse(streamApi))
               .timeout(const Duration(seconds: 7));
           if (res.statusCode == 200) {
-            final list = (jsonDecode(res.body)['streams'] as List?) ?? [];
-            for (final s in list.take(8)) {
-              if (s is Map<String, dynamic> && s['url'] != null) {
-                found.add(s);
+            final decoded = jsonDecode(res.body);
+            if (decoded is Map && decoded['streams'] is List) {
+              for (final s in (decoded['streams'] as List).take(8)) {
+                if (s is Map && s['url'] != null) {
+                  found.add(s);
+                }
               }
             }
           }
@@ -779,8 +818,8 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.item['name']?.toString() ?? 'Unknown';
-    final desc = widget.item['description']?.toString() ?? 'No synopsis available.';
+    final title = (widget.item['name'] ?? 'Unknown').toString();
+    final desc = (widget.item['description'] ?? 'No synopsis available.').toString();
     final dubOptions = [
       'Original Audio',
       'Official Dub',
@@ -871,11 +910,12 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
             else if (_streams.isEmpty)
               const Text(
                 'Add a Stremio stream addon in the Plugins tab to load direct streams.',
-                style: TextStyle(color: Colors.white45, fontSize: 12.5),
+                style: TextStyle(color: Colors.white54, fontSize: 12.5),
               )
             else
-              ..._streams.map(
-                (st) => Container(
+              ..._streams.map((rawSt) {
+                final st = rawSt is Map ? rawSt : {};
+                return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFF121218),
@@ -883,21 +923,21 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
                   ),
                   child: ListTile(
                     title: Text(
-                      st['title']?.toString() ?? st['name']?.toString() ?? 'Stream',
+                      (st['title'] ?? st['name'] ?? 'Stream').toString(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 13),
                     ),
                     trailing: const Icon(Icons.play_arrow_rounded, color: Color(0xFF00E5FF)),
                     onTap: () async {
-                      final u = Uri.tryParse(st['url'].toString());
+                      final u = Uri.tryParse((st['url'] ?? '').toString());
                       if (u != null) {
                         await launchUrl(u, mode: LaunchMode.externalApplication);
                       }
                     },
                   ),
-                ),
-              ),
+                );
+              }),
           ],
         ),
       ),
