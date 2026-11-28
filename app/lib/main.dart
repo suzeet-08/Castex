@@ -22,7 +22,8 @@ void main() {
 
 Future restoreCastexBackupFromString(BuildContext context, String rawJson) async {
   final decoded = jsonDecode(rawJson.trim());
-  if (decoded is! Map || decoded['profile'] is! Map) {
+    if (decoded is Map == false || decoded['profile'] is Map == false) {
+        
     throw Exception('Invalid backup format');
   }
   final prof = decoded['profile'] as Map;
