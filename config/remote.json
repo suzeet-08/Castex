@@ -1,22 +1,11 @@
-{
-  "app_name": "Castex",
-  "latest_versions": {
-    "stable": "1.0.0",
-    "beta": "1.0.0-beta.1",
-    "advance": "1.0.0-adv",
-    "lite": "1.0.0-lite"
-  },
-  "announcement": {
-    "id": "welcome_v1",
-    "active": true,
-    "title": "Welcome to Castex!",
-    "message": "Zero ads, Hybrid Dub Router & KotoSub AI subtitles are live. Join our Discord to test upcoming Beta features."
-  },
-  "community_links": {
-    "discord": "https://discord.gg/your-invite-code",
-    "instagram": "https://instagram.com/castex.app",
-    "github": "https://github.com/suzeet-08/Castex",
-    "website": "https://castex.pages.dev"
-  },
-  "default_catalogs": [https://raw.githubusercontent.com/suzeet-08/Castex/refs/heads/main/plugins/sample-pack.json]
-}
+{ “app_name”: “Castex”, “latest_versions”: { “stable”: “1.0.0”, “beta”:
+“1.0.0-beta.1”, “advance”: “1.0.0-adv”, “lite”: “1.0.0-lite” },
+“announcement”: { “id”: “welcome_v1”, “active”: true, “title”: “Welcome
+to Castex!”, “message”: “Zero ads, Hybrid Dub Router & KotoSub AI
+subtitles are live. Join our Discord to test upcoming Beta features.” },
+“community_links”: { “discord”: “https://discord.gg/your-invite-code”,
+“instagram”: “https://instagram.com/castex.app”, “github”:
+“https://github.com/suzeet-08/Castex”, “website”:
+“https://castex.pages.dev” }, “default_catalogs”: [
+“https://raw.githubusercontent.com/suzeet-08/Castex/refs/heads/main/plugins/sample-pack.json”
+] }
