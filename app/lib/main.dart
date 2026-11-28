@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
-typedef JsonMap = Map<String,dynamic>;
+typedef JsonMap = Map<String, dynamic>;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,12 +27,12 @@ void main() async {
 }
 
 // ============================================================================
-// 1. CORE CONFIGURATION (PRE-CONFIGURED WITH YOUR FIREBASE & KOTOSUB)
+// 1. CORE CONFIGURATION (VERIFIED FIREBASE CONFIG & KOTOSUB)
 // ============================================================================
 class CastexConfig {
   static const String appVersion = '1.0.0-flagship';
   static const String firebaseApiKey =
-      'AIzaSyCgbpacxuwoJgwneGFlk_Vln4nWgnZ4FCc';
+      'AIzaSyCgbpacxuwoJgwheOFlk_Vln4nWghZ4FCc';
   static const String firebaseDbUrl =
       'https://castex-app-2eb5b-default-rtdb.asia-southeast1.firebasedatabase.app';
   static const String kotoSubServerUrl = 'https://sub-bot-act8.onrender.com';
@@ -345,7 +345,7 @@ class QuizQuestion {
   final String optionA;
   final String optionB;
   final String optionC;
-  final String correctOption; // 'a', 'b', or 'c'
+  final String correctOption;
 
   const QuizQuestion({
     required this.question,
@@ -830,6 +830,7 @@ class CastexController extends ChangeNotifier {
   String? email;
   String? idToken;
   String? refreshToken;
+  bool localGuestMode = false;
   bool isSyncing = false;
   String syncStatus = 'Offline Local';
 
@@ -885,8 +886,10 @@ class CastexController extends ChangeNotifier {
     ),
   ];
 
-  bool get isLoggedIn =>
+  bool get isCloudLoggedIn =>
       uid != null && uid!.isNotEmpty && idToken != null && idToken!.isNotEmpty;
+
+  bool get hasAppAccess => isCloudLoggedIn || localGuestMode;
 
   UserProfile get activeProfile => profiles.firstWhere(
         (p) => p.id == activeProfileId,
@@ -902,14 +905,20 @@ class CastexController extends ChangeNotifier {
     email = _prefs.getString('cx_email');
     idToken = _prefs.getString('cx_id_token');
     refreshToken = _prefs.getString('cx_refresh_token');
+    localGuestMode = _prefs.getBool('cx_local_guest') ?? false;
 
     _loadLocalState();
 
-    if (isLoggedIn) {
+    if (isCloudLoggedIn) {
       if (activeProfile.pin.length == 4) {
         profileUnlocked = false;
       }
       unawaited(_refreshSessionAndPullCloud());
+    } else if (localGuestMode) {
+      syncStatus = 'Local Device';
+      if (activeProfile.pin.length == 4) {
+        profileUnlocked = false;
+      }
     }
   }
 
@@ -971,6 +980,7 @@ class CastexController extends ChangeNotifier {
     if (refreshToken != null) {
       await _prefs.setString('cx_refresh_token', refreshToken!);
     }
+    await _prefs.setBool('cx_local_guest', localGuestMode);
     await _prefs.setString('cx_appearance', jsonEncode(appearance.toJson()));
     await _prefs.setString(
       'cx_profiles',
@@ -989,6 +999,14 @@ class CastexController extends ChangeNotifier {
       'cx_addons',
       jsonEncode(addons.map((e) => e.toJson()).toList()),
     );
+  }
+
+  Future<void> enterLocalMode() async {
+    localGuestMode = true;
+    profileUnlocked = true;
+    syncStatus = 'Local Device';
+    await _saveLocalImmediately();
+    notifyListeners();
   }
 
   JsonMap _buildFullStatePayload() => {
@@ -1089,6 +1107,7 @@ class CastexController extends ChangeNotifier {
       email = body['email']?.toString() ?? userEmail.trim();
       idToken = body['idToken']?.toString();
       refreshToken = body['refreshToken']?.toString();
+      localGuestMode = false;
       profileUnlocked = true;
 
       await _saveLocalImmediately();
@@ -1133,7 +1152,7 @@ class CastexController extends ChangeNotifier {
     if (code.contains('INVALID_LOGIN_CREDENTIALS') ||
         code.contains('INVALID_PASSWORD') ||
         code.contains('EMAIL_NOT_FOUND')) {
-      return 'Wrong email or password.';
+      return 'Account not found or wrong password. Tap "New here? Create Account" first!';
     }
     if (code.contains('WEAK_PASSWORD')) {
       return 'Password must be at least 6 characters.';
@@ -1166,7 +1185,7 @@ class CastexController extends ChangeNotifier {
   }
 
   Future<void> pullCloudSync() async {
-    if (!isLoggedIn) return;
+    if (!isCloudLoggedIn) return;
     isSyncing = true;
     notifyListeners();
     try {
@@ -1193,7 +1212,7 @@ class CastexController extends ChangeNotifier {
   Future<void> pushCloudSync() async {
     await _saveLocalImmediately();
     notifyListeners();
-    if (!isLoggedIn) return;
+    if (!isCloudLoggedIn) return;
     try {
       final url =
           '${CastexConfig.firebaseDbUrl}/users/$uid.json?auth=$idToken';
@@ -1214,10 +1233,12 @@ class CastexController extends ChangeNotifier {
     email = null;
     idToken = null;
     refreshToken = null;
+    localGuestMode = false;
     await _prefs.remove('cx_uid');
     await _prefs.remove('cx_email');
     await _prefs.remove('cx_id_token');
     await _prefs.remove('cx_refresh_token');
+    await _prefs.setBool('cx_local_guest', false);
     notifyListeners();
   }
 
@@ -1405,7 +1426,7 @@ class CastexApp extends StatelessWidget {
             cardColor: app.cardColor,
             dialogBackgroundColor: const Color(0xFF12141B),
           ),
-          home: !controller.isLoggedIn
+          home: !controller.hasAppAccess
               ? AuthGateScreen(controller: controller)
               : !controller.profileUnlocked
                   ? ProfilePinGateScreen(controller: controller)
@@ -1494,7 +1515,7 @@ class AuthGateScreen extends StatefulWidget {
 class _AuthGateScreenState extends State<AuthGateScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  bool _isSignUp = false;
+  bool _isSignUp = true; // Default to Create Account for first-time users
   bool _loading = false;
   bool _obscure = true;
   String? _errorMsg;
@@ -1673,7 +1694,7 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
                                 ),
                               ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -1693,11 +1714,25 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
                             TextButton(
                               onPressed: _forgotPassword,
                               child: const Text(
-                                'Reset PIN/Pass',
+                                'Reset Pass',
                                 style: TextStyle(fontSize: 12.5),
                               ),
                             ),
                         ],
+                      ),
+                      const Divider(height: 24),
+                      OutlinedButton.icon(
+                        onPressed: () => widget.controller.enterLocalMode(),
+                        icon: const Icon(Icons.smartphone_rounded, size: 18),
+                        label: const Text('Continue in Local Mode (Offline)'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: const BorderSide(color: Colors.white24),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -3530,7 +3565,7 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
                           ),
                         ),
                         Text(
-                          widget.controller.email ?? '',
+                          widget.controller.email ?? 'Local Device Mode',
                           style: const TextStyle(
                             color: Colors.white60,
                             fontSize: 12,
@@ -3768,7 +3803,11 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
           ),
           onPressed: () => widget.controller.signOut(),
           icon: const Icon(Icons.logout_rounded),
-          label: const Text('Sign Out of Cloud Account'),
+          label: Text(
+            widget.controller.isCloudLoggedIn
+                ? 'Sign Out of Cloud Account'
+                : 'Sign In / Create Cloud Account',
+          ),
         ),
       ],
     );
