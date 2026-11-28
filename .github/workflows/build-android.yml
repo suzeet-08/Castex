@@ -1,0 +1,105 @@
+name: Build Castex Android APKs
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Castex Stable & Lite APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Castex Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Configure Unlimited Maven Central Mirror (Fix HTTP 429)
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/init.d/mirror.gradle.kts
+          fun RepositoryHandler.redirectMavenCentral() {
+              all {
+                  if (this is MavenArtifactRepository) {
+                      val u = this.url.toString()
+                      if (u.startsWith("https://repo.maven.apache.org/maven2") ||
+                          u.startsWith("http://repo.maven.apache.org/maven2")) {
+                          setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
+                  }
+              }
+          }
+
+          beforeSettings {
+              pluginManagement {
+                  repositories {
+                      maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+                      google()
+                      gradlePluginPortal()
+                  }
+                  repositories.redirectMavenCentral()
+              }
+              dependencyResolutionManagement {
+                  repositories {
+                      maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+                      google()
+                  }
+                  repositories.redirectMavenCentral()
+              }
+          }
+
+          allprojects {
+              buildscript {
+                  repositories {
+                      maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+                      google()
+                      gradlePluginPortal()
+                  }
+                  repositories.redirectMavenCentral()
+              }
+              repositories {
+                  maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+                  google()
+              }
+              repositories.redirectMavenCentral()
+          }
+          EOF
+
+          cat << 'EOF' >> ~/.gradle/gradle.properties
+          org.gradle.workers.max=2
+          systemProp.http.keepAlive=true
+          systemProp.http.maxConnections=4
+          EOF
+
+      - name: Install Flutter Dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Build Castex Stable & Lite APKs
+        working-directory: app
+        run: |
+          flutter build apk --release
+          mkdir -p build/castex-apks
+          cp build/app/outputs/flutter-apk/app-release.apk build/castex-apks/Castex-v1.0-Stable.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/castex-apks/Castex-v1.0-Lite.apk
+
+      - name: Upload Castex APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Castex-v1.0-APKs
+          path: app/build/castex-apks/*.apk
