@@ -19,7 +19,7 @@ class CastexApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark().copyWith(
             scaffoldBackgroundColor: app.bgColor,
-            pageTransitionsTheme: const PageTransitionsTheme(
+            pageTransitionsTheme: PageTransitionsTheme(
               builders: {
                 TargetPlatform.android: CupertinoPageTransitionsBuilder(),
                 TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
@@ -525,7 +525,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             border: Border.all(
                               color: widget.controller.effectiveFanMode
                                   ? app.accentColor
-                                  : Colors.white14,
+                                  : Colors.white12,
                             ),
                           ),
                           child: Text(
