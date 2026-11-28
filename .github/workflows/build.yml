@@ -41,6 +41,46 @@ jobs:
           sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
 
+      - name: Apply Custom Castex Launcher Icon
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - << 'EOF'
+          import os, glob, shutil
+          from PIL import Image, ImageDraw
+
+          src = None
+          for f in glob.glob("assets/*"):
+              if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                  src = f
+                  break
+
+          if src:
+              img = Image.open(src).convert("RGBA")
+          else:
+              img = Image.new("RGBA", (512, 512), (0, 0, 0, 255))
+              d = ImageDraw.Draw(img)
+              d.pieslice([86, 86, 426, 426], start=38, end=322, fill=(255, 255, 255, 255))
+              d.ellipse([146, 146, 366, 366], fill=(0, 0, 0, 255))
+              d.polygon([(235, 192), (235, 320), (355, 256)], fill=(229, 9, 20, 255))
+
+          for anydpi in glob.glob("android/app/src/main/res/mipmap-anydpi*"):
+              shutil.rmtree(anydpi, ignore_errors=True)
+
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+          for folder, px in sizes.items():
+              out_dir = os.path.join("android/app/src/main/res", folder)
+              os.makedirs(out_dir, exist_ok=True)
+              resized = img.resize((px, px), Image.Resampling.LANCZOS)
+              resized.save(os.path.join(out_dir, "ic_launcher.png"), "PNG")
+              resized.save(os.path.join(out_dir, "ic_launcher_round.png"), "PNG")
+          EOF
+
       - name: Install Packages
         run: flutter pub get
 
