@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'castex_core.dart';
@@ -19,7 +20,7 @@ class CastexApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark().copyWith(
             scaffoldBackgroundColor: app.bgColor,
-            pageTransitionsTheme: PageTransitionsTheme(
+            pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
                 TargetPlatform.android: CupertinoPageTransitionsBuilder(),
                 TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
@@ -31,7 +32,6 @@ class CastexApp extends StatelessWidget {
               surface: app.cardColor,
             ),
             cardColor: app.cardColor,
-            dialogBackgroundColor: const Color(0xFF10131A),
           ),
           home: !controller.hasAppAccess
               ? AuthGateScreen(controller: controller)
