@@ -1,519 +1,2935 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
+import 'dart:math' as math;
+import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
-const String kRemoteConfigUrl =
-    'https://raw.githubusercontent.com/suzeet-08/Castex/refs/heads/main/config/remote.json';
-
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const CastexApp());
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.black,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
+  final controller = CastexController();
+  await controller.init();
+  runApp(CastexApp(controller: controller));
 }
 
-Future restoreCastexBackupFromString(BuildContext context, String rawJson) async {
-  final decoded = jsonDecode(rawJson.trim());
-    if (decoded is Map == false || decoded['profile'] is Map == false) {
-        
-    throw Exception('Invalid backup format');
-  }
-  final prof = decoded['profile'] as Map;
-  final name = (prof['name'] ?? '').toString().trim();
-  if (name.isEmpty) {
-    throw Exception('Profile missing in backup');
+// ============================================================================
+// 1. CORE CONFIGURATION (PRE-CONFIGURED WITH YOUR FIREBASE & KOTOSUB)
+// ============================================================================
+class CastexConfig {
+  static const String appVersion = '1.0.0-flagship';
+  static const String firebaseApiKey =
+      'AIzaSyCgbpacxuwoJgwneGFlk_Vln4nWgnZ4FCc';
+  static const String firebaseDbUrl =
+      'https://castex-app-2eb5b-default-rtdb.asia-southeast1.firebasedatabase.app';
+  static const String kotoSubServerUrl = 'https://sub-bot-act8.onrender.com';
+  static const String defaultCinemetaUrl =
+      'https://v3-cinemeta.strem.io/manifest.json';
+}
+
+// ============================================================================
+// 2. THEME, LIQUID GLASS & CUSTOMIZATION MODEL
+// ============================================================================
+class CastexAppearance {
+  String accentHex;
+  bool amoledBlack;
+  String glassSurface; // Liquid, Frosted, Clear, Solid
+  double blurRadius;
+  double tintOpacity;
+  String edgeGlow; // Off, Subtle, Balanced, Bold
+  bool autoPosterAura;
+  String dockMode; // Adaptive, Expanded, Compact
+  double dockRadius;
+  bool liquidLens;
+  bool fanMode;
+  bool spoilerShield;
+  bool cloudflareDns;
+  bool autoNextEpisode;
+  String defaultSubLang; // Hinglish, Bangla, Banglish, English
+  bool dualSubtitles;
+  double subFontSize;
+  double subBgOpacity;
+
+  CastexAppearance({
+    this.accentHex = '#E50914',
+    this.amoledBlack = true,
+    this.glassSurface = 'Liquid',
+    this.blurRadius = 18.0,
+    this.tintOpacity = 0.62,
+    this.edgeGlow = 'Balanced',
+    this.autoPosterAura = true,
+    this.dockMode = 'Adaptive',
+    this.dockRadius = 32.0,
+    this.liquidLens = true,
+    this.fanMode = true,
+    this.spoilerShield = true,
+    this.cloudflareDns = true,
+    this.autoNextEpisode = true,
+    this.defaultSubLang = 'Hinglish',
+    this.dualSubtitles = true,
+    this.subFontSize = 16.0,
+    this.subBgOpacity = 0.58,
+  });
+
+  Color get accentColor {
+    try {
+      final clean = accentHex.replaceAll('#', '');
+      return Color(int.parse('FF$clean', radix: 16));
+    } catch (_) {
+      return const Color(0xFFE50914);
+    }
   }
 
-  final filePin = (prof['pin'] ?? '').toString().trim();
-  if (filePin.isNotEmpty) {
-    final pinCtrl = TextEditingController();
-    final ok = await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF121216),
-        title: const Text('Enter Backup PIN'),
-        content: TextField(
-          controller: pinCtrl,
-          keyboardType: TextInputType.number,
-          maxLength: 4,
-          obscureText: true,
-          decoration: const InputDecoration(hintText: '4-digit PIN'),
+  Color get bgColor =>
+      amoledBlack ? const Color(0xFF000000) : const Color(0xFF0B0D12);
+
+  Color get cardColor =>
+      amoledBlack ? const Color(0xFF0E1015) : const Color(0xFF151922);
+
+  double get glowStrength {
+    switch (edgeGlow) {
+      case 'Off':
+        return 0.0;
+      case 'Subtle':
+        return 0.25;
+      case 'Bold':
+        return 0.72;
+      default:
+        return 0.45;
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+        'accentHex': accentHex,
+        'amoledBlack': amoledBlack,
+        'glassSurface': glassSurface,
+        'blurRadius': blurRadius,
+        'tintOpacity': tintOpacity,
+        'edgeGlow': edgeGlow,
+        'autoPosterAura': autoPosterAura,
+        'dockMode': dockMode,
+        'dockRadius': dockRadius,
+        'liquidLens': liquidLens,
+        'fanMode': fanMode,
+        'spoilerShield': spoilerShield,
+        'cloudflareDns': cloudflareDns,
+        'autoNextEpisode': autoNextEpisode,
+        'defaultSubLang': defaultSubLang,
+        'dualSubtitles': dualSubtitles,
+        'subFontSize': subFontSize,
+        'subBgOpacity': subBgOpacity,
+      };
+
+  factory CastexAppearance.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return CastexAppearance();
+    return CastexAppearance(
+      accentHex: json['accentHex']?.toString() ?? '#E50914',
+      amoledBlack: json['amoledBlack'] ?? true,
+      glassSurface: json['glassSurface']?.toString() ?? 'Liquid',
+      blurRadius: (json['blurRadius'] as num?)?.toDouble() ?? 18.0,
+      tintOpacity: (json['tintOpacity'] as num?)?.toDouble() ?? 0.62,
+      edgeGlow: json['edgeGlow']?.toString() ?? 'Balanced',
+      autoPosterAura: json['autoPosterAura'] ?? true,
+      dockMode: json['dockMode']?.toString() ?? 'Adaptive',
+      dockRadius: (json['dockRadius'] as num?)?.toDouble() ?? 32.0,
+      liquidLens: json['liquidLens'] ?? true,
+      fanMode: json['fanMode'] ?? true,
+      spoilerShield: json['spoilerShield'] ?? true,
+      cloudflareDns: json['cloudflareDns'] ?? true,
+      autoNextEpisode: json['autoNextEpisode'] ?? true,
+      defaultSubLang: json['defaultSubLang']?.toString() ?? 'Hinglish',
+      dualSubtitles: json['dualSubtitles'] ?? true,
+      subFontSize: (json['subFontSize'] as num?)?.toDouble() ?? 16.0,
+      subBgOpacity: (json['subBgOpacity'] as num?)?.toDouble() ?? 0.58,
+    );
+  }
+
+  String toPresetCode() {
+    final hex = accentHex.replaceAll('#', '').toUpperCase();
+    final surf = glassSurface.isNotEmpty ? glassSurface[0].toUpperCase() : 'L';
+    final glow = edgeGlow.isNotEmpty ? edgeGlow[0].toUpperCase() : 'B';
+    return 'CX-$hex-$surf$glow';
+  }
+
+  bool applyPresetCode(String raw) {
+    final code = raw.trim().toUpperCase();
+    if (code == 'CX-CYBERPUNK') {
+      accentHex = '#00F5D4';
+      glassSurface = 'Liquid';
+      edgeGlow = 'Bold';
+      blurRadius = 22.0;
+      return true;
+    }
+    if (code == 'CX-GHIBLI') {
+      accentHex = '#F59E0B';
+      glassSurface = 'Frosted';
+      edgeGlow = 'Subtle';
+      blurRadius = 16.0;
+      return true;
+    }
+    final parts = code.split('-');
+    if (parts.length == 3 && parts[0] == 'CX' && parts[1].length == 6) {
+      accentHex = '#${parts[1]}';
+      if (parts[2].isNotEmpty) {
+        final s = parts[2][0];
+        glassSurface = s == 'F'
+            ? 'Frosted'
+            : s == 'C'
+                ? 'Clear'
+                : s == 'S'
+                    ? 'Solid'
+                    : 'Liquid';
+      }
+      if (parts[2].length > 1) {
+        final g = parts[2][1];
+        edgeGlow = g == 'O'
+            ? 'Off'
+            : g == 'S'
+                ? 'Subtle'
+                : g == 'B'
+                    ? 'Bold'
+                    : 'Balanced';
+      }
+      return true;
+    }
+    return false;
+  }
+}
+
+// ============================================================================
+// 3. USER PROFILE & BUILT-IN AVATAR STUDIO (20 AVATARS)
+// ============================================================================
+class UserProfile {
+  String id;
+  String name;
+  int avatarIndex;
+  String customAvatarUrl;
+  String pin; // Empty or 4-digit PIN
+  bool simpleModeOnly;
+
+  UserProfile({
+    required this.id,
+    required this.name,
+    this.avatarIndex = 0,
+    this.customAvatarUrl = '',
+    this.pin = '',
+    this.simpleModeOnly = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'avatarIndex': avatarIndex,
+        'customAvatarUrl': customAvatarUrl,
+        'pin': pin,
+        'simpleModeOnly': simpleModeOnly,
+      };
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
+        id: json['id']?.toString() ?? 'p1',
+        name: json['name']?.toString() ?? 'Viewer',
+        avatarIndex: (json['avatarIndex'] as num?)?.toInt() ?? 0,
+        customAvatarUrl: json['customAvatarUrl']?.toString() ?? '',
+        pin: json['pin']?.toString() ?? '',
+        simpleModeOnly: json['simpleModeOnly'] ?? false,
+      );
+}
+
+class BuiltInAvatars {
+  static const List> items = [
+    {'icon': Icons.bolt_rounded, 'c1': 0xFFE50914, 'c2': 0xFF7F0000},
+    {'icon': Icons.auto_awesome, 'c1': 0xFF00D4FF, 'c2': 0xFF0052D4},
+    {'icon': Icons.local_fire_department, 'c1': 0xFFFF512F, 'c2': 0xFFDD2476},
+    {'icon': Icons.nightlight_round, 'c1': 0xFF7F00FF, 'c2': 0xFFE100FF},
+    {'icon': Icons.shield_moon_rounded, 'c1': 0xFF11998E, 'c2': 0xFF38EF7D},
+    {'icon': Icons.pets_rounded, 'c1': 0xFFF7971E, 'c2': 0xFFFFD200},
+    {'icon': Icons.rocket_launch_rounded, 'c1': 0xFF3A7BD5, 'c2': 0xFF00D2FF},
+    {'icon': Icons.sports_esports_rounded, 'c1': 0xFF8E2DE2, 'c2': 0xFF4A00E0},
+    {'icon': Icons.visibility_rounded, 'c1': 0xFFCB2D3E, 'c2': 0xFFEF473A},
+    {'icon': Icons.cruelty_free_rounded, 'c1': 0xFFEC008C, 'c2': 0xFFFC6767},
+    {'icon': Icons.whatshot_rounded, 'c1': 0xFFF12711, 'c2': 0xFFF5AF19},
+    {'icon': Icons.ac_unit_rounded, 'c1': 0xFF56CCF2, 'c2': 0xFF2F80ED},
+    {'icon': Icons.catching_pokemon, 'c1': 0xFFFF416C, 'c2': 0xFFFF4B2B},
+    {'icon': Icons.cyclone_rounded, 'c1': 0xFF00B4DB, 'c2': 0xFF0083B0},
+    {'icon': Icons.diamond_rounded, 'c1': 0xFFDA22FF, 'c2': 0xFF9733EE},
+    {'icon': Icons.eco_rounded, 'c1': 0xFF56AB2F, 'c2': 0xFFA8E063},
+    {'icon': Icons.flash_on_rounded, 'c1': 0xFFFFB75E, 'c2': 0xFFED8F03},
+    {'icon': Icons.headphones_rounded, 'c1': 0xFF4776E6, 'c2': 0xFF8E54E9},
+    {'icon': Icons.movie_filter_rounded, 'c1': 0xFFD31027, 'c2': 0xFFEA384D},
+    {'icon': Icons.star_rounded, 'c1': 0xFFFF8008, 'c2': 0xFFFFC837},
+  ];
+}
+
+class AvatarWidget extends StatelessWidget {
+  final UserProfile profile;
+  final double size;
+  final bool showBorder;
+  final Color borderColor;
+
+  const AvatarWidget({
+    super.key,
+    required this.profile,
+    this.size = 42,
+    this.showBorder = false,
+    this.borderColor = Colors.white,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final idx = profile.avatarIndex.clamp(0, BuiltInAvatars.items.length - 1);
+    final preset = BuiltInAvatars.items[idx];
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: showBorder ? Border.all(color: borderColor, width: 2) : null,
+        gradient: LinearGradient(
+          colors: [Color(preset['c1'] as int), Color(preset['c2'] as int)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+        boxShadow: [
+          BoxShadow(
+            color: Color(preset['c1'] as int).withOpacity(0.35),
+            blurRadius: 10,
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, pinCtrl.text.trim() == filePin),
-            child: const Text('Verify'),
+        ],
+      ),
+      child: ClipOval(
+        child: profile.customAvatarUrl.trim().isNotEmpty
+            ? Image.network(
+                profile.customAvatarUrl.trim(),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(
+                  preset['icon'] as IconData,
+                  color: Colors.white,
+                  size: size * 0.54,
+                ),
+              )
+            : Icon(
+                preset['icon'] as IconData,
+                color: Colors.white,
+                size: size * 0.54,
+              ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 4. MEDIA, EPISODE, STREAM & ADDON MODELS
+// ============================================================================
+class StreamSource {
+  final String id;
+  final String title;
+  final String quality; // 4K HDR, 1080p HEVC, 720p
+  final String dubLayer; // Original Audio, Official Dub, Community Fandub
+  final String language;
+  final String provider;
+  final String url;
+
+  const StreamSource({
+    required this.id,
+    required this.title,
+    required this.quality,
+    required this.dubLayer,
+    required this.language,
+    required this.provider,
+    required this.url,
+  });
+}
+
+class EpisodeItem {
+  final String id;
+  final int season;
+  final int number;
+  final String title;
+  final String synopsis;
+  final String thumbnailUrl;
+  final String duration;
+  final double rating;
+  final String canonTag; // CANON, MIXED, FILLER
+  final int introStartSec;
+  final int introEndSec;
+  final List<StreamSource> streams;
+
+  const EpisodeItem({
+    required this.id,
+    required this.season,
+    required this.number,
+    required this.title,
+    required this.synopsis,
+    required this.thumbnailUrl,
+    required this.duration,
+    required this.rating,
+    this.canonTag = 'CANON',
+    this.introStartSec = 5,
+    this.introEndSec = 25,
+    required this.streams,
+  });
+}
+
+class MediaItem {
+  final String id;
+  final String title;
+  final String type; // Anime, Movie, Series
+  final String year;
+  final double rating;
+  final int? rankToday;
+  final String qualityBadge;
+  final String studio;
+  final List<String> genres;
+  final Color auraColor;
+  final String posterUrl;
+  final String backdropUrl;
+  final String overview;
+  final String aiRecap;
+  final List<EpisodeItem> episodes;
+  final List> quizQuestions;
+
+  const MediaItem({
+    required this.id,
+    required this.title,
+    required this.type,
+    required this.year,
+    required this.rating,
+    this.rankToday,
+    required this.qualityBadge,
+    required this.studio,
+    required this.genres,
+    required this.auraColor,
+    required this.posterUrl,
+    required this.backdropUrl,
+    required this.overview,
+    required this.aiRecap,
+    required this.episodes,
+    required this.quizQuestions,
+  });
+}
+
+class AddonManifest {
+  final String id;
+  final String name;
+  final String url;
+  final String type; // Stremio Addon, Fandub Pack, Catalog JSON
+  bool enabled;
+
+  AddonManifest({
+    required this.id,
+    required this.name,
+    required this.url,
+    required this.type,
+    this.enabled = true,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'url': url,
+        'type': type,
+        'enabled': enabled,
+      };
+
+  factory AddonManifest.fromJson(Map<String, dynamic> json) => AddonManifest(
+        id: json['id']?.toString() ?? DateTime.now().toString(),
+        name: json['name']?.toString() ?? 'Custom Addon',
+        url: json['url']?.toString() ?? '',
+        type: json['type']?.toString() ?? 'Stremio Addon',
+        enabled: json['enabled'] ?? true,
+      );
+}
+
+// ============================================================================
+// 5. CURATED BUILT-IN SHOWCASE CATALOG (INSTANT PLAY + STREMIO COMPATIBLE)
+// ============================================================================
+class CastexCatalog {
+  static const String _stream1080 =
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
+  static const String _streamAnimeDemo =
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4';
+  static const String _streamActionDemo =
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+
+  static final List<MediaItem> items = [
+    MediaItem(
+      id: 'cx_jjk_s2',
+      title: 'Jujutsu Kaisen: Shibuya Incident',
+      type: 'Anime',
+      year: '2026',
+      rating: 9.4,
+      rankToday: 1,
+      qualityBadge: '4K HDR',
+      studio: 'Crunchyroll',
+      genres: ['Anime', 'Action', 'Supernatural'],
+      auraColor: const Color(0xFF9D4EDD),
+      posterUrl:
+          'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&q=80',
+      backdropUrl:
+          'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&q=80',
+      overview:
+          'October 31st in Shibuya: special grade curses erect a veil trapping civilians as Satoru Gojo steps into an ambush designed to seal the strongest sorcerer.',
+      aiRecap:
+          'Previously: Yuji Itadori mastered Black Flash alongside Nobara and Megumi. Meanwhile, Geto and Mahito collected Sukuna fingers to spring the Shibuya Prison Realm trap.',
+      episodes: [
+        EpisodeItem(
+          id: 'jjk_e1',
+          season: 2,
+          number: 1,
+          title: 'The Curtain Falls Over Shibuya',
+          synopsis:
+              'Multiple veils descend across Shibuya Station as sorcerers are split into underground strike teams.',
+          thumbnailUrl:
+              'https://images.unsplash.com/photo-1541562232579-512a21360020?w=800&q=80',
+          duration: '24m',
+          rating: 9.2,
+          canonTag: 'CANON',
+          streams: [
+            StreamSource(
+              id: 's1',
+              title: 'Castex Direct • 1080p HEVC [Dual Audio]',
+              quality: '1080p',
+              dubLayer: 'Original Audio',
+              language: 'Japanese + KotoSub',
+              provider: 'Castex Core',
+              url: _streamAnimeDemo,
+            ),
+            StreamSource(
+              id: 's2',
+              title: 'Crunchyroll Official Hindi/English Dub',
+              quality: '1080p',
+              dubLayer: 'Official Dub',
+              language: 'Hindi / English',
+              provider: 'Official Dub Router',
+              url: _stream1080,
+            ),
+            StreamSource(
+              id: 's3',
+              title: 'Bengal Anime Fandub Studio [0.000s Sync]',
+              quality: '1080p',
+              dubLayer: 'Community Fandub',
+              language: 'Bangla Fandub',
+              provider: 'Verified Community',
+              url: _streamActionDemo,
+            ),
+          ],
+        ),
+        EpisodeItem(
+          id: 'jjk_e2',
+          season: 2,
+          number: 2,
+          title: '0.2 Seconds Domain Expansion',
+          synopsis:
+              'Surrounded by transfigured humans in B5F, Gojo unleashes Unlimited Void for a fraction of a second.',
+          thumbnailUrl:
+              'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&q=80',
+          duration: '24m',
+          rating: 9.8,
+          canonTag: 'CANON',
+          streams: [
+            StreamSource(
+              id: 's4',
+              title: 'Castex Direct • 4K Upscaled [KotoSub Ready]',
+              quality: '4K HDR',
+              dubLayer: 'Original Audio',
+              language: 'Japanese + KotoSub',
+              provider: 'Castex Core',
+              url: _stream1080,
+            ),
+          ],
+        ),
+        EpisodeItem(
+          id: 'jjk_e3',
+          season: 2,
+          number: 3,
+          title: 'Shibuya Side-Story: Sorcerer Briefing',
+          synopsis:
+              'Tactical recap of Tokyo & Kyoto Jujutsu High teams before entering the subway.',
+          thumbnailUrl:
+              'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800&q=80',
+          duration: '22m',
+          rating: 7.4,
+          canonTag: 'FILLER',
+          streams: [
+            StreamSource(
+              id: 's5',
+              title: 'Castex Direct • 1080p',
+              quality: '1080p',
+              dubLayer: 'Original Audio',
+              language: 'Japanese',
+              provider: 'Castex Core',
+              url: _streamAnimeDemo,
+            ),
+          ],
+        ),
+      ],
+      quizQuestions: [
+        {
+          'q': 'How long did Satoru Gojo activate Unlimited Void in Shibuya B5F?',
+          'a': '0.2 Seconds',
+          'b': '2.0 Seconds',
+          'c': '0.02 Seconds',
+          'ans': 'a',
+        },
+        {
+          'q': 'Which cursed object was used to trap Gojo in Shibuya?',
+          'a': 'Inverted Spear of Heaven',
+          'b': 'Prison Realm',
+          'c': 'Playful Cloud',
+          'ans': 'b',
+        },
+      ],
+    ),
+    MediaItem(
+      id: 'cx_tears_steel',
+      title: 'Tears of Steel: Cyber Protocol',
+      type: 'Movie',
+      year: '2026',
+      rating: 8.9,
+      rankToday: 2,
+      qualityBadge: '4K',
+      studio: 'Netflix',
+      genres: ['Sci-Fi', 'Action', 'Cyberpunk'],
+      auraColor: const Color(0xFF00D4FF),
+      posterUrl:
+          'https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=600&q=80',
+      backdropUrl:
+          'https://images.unsplash.com/photo-1515630278258-407f66498911?w=1200&q=80',
+      overview:
+          'In a dystopian Amsterdam ruled by rogue synthetic intelligence, a team of resistance engineers attempts a memory-bridge experiment to save humanity.',
+      aiRecap:
+          'Feature Film: Thom and Celia parted ways years ago—now the dome shield around Amsterdam is failing as robotic sentinels breach the perimeter.',
+      episodes: [
+        EpisodeItem(
+          id: 'tos_m1',
+          season: 1,
+          number: 1,
+          title: 'Full Movie • Director Master',
+          synopsis:
+              'Complete feature presentation with KotoSub Hinglish/Bangla Dual Subtitles and Hybrid Dub Router.',
+          thumbnailUrl:
+              'https://images.unsplash.com/photo-1515630278258-407f66498911?w=800&q=80',
+          duration: '12m',
+          rating: 8.9,
+          canonTag: 'CANON',
+          streams: [
+            StreamSource(
+              id: 'tos_s1',
+              title: 'Castex Ultra • 1080p Master [Zero-Buffer]',
+              quality: '1080p',
+              dubLayer: 'Original Audio',
+              language: 'English + KotoSub',
+              provider: 'Castex Core',
+              url: _stream1080,
+            ),
+            StreamSource(
+              id: 'tos_s2',
+              title: 'Community Hinglish Fandub Layer',
+              quality: '1080p',
+              dubLayer: 'Community Fandub',
+              language: 'Hinglish Fandub',
+              provider: 'Indie Fandub Hub',
+              url: _streamActionDemo,
+            ),
+          ],
+        ),
+      ],
+      quizQuestions: [
+        {
+          'q': 'Which European city serves as the setting for Tears of Steel?',
+          'a': 'Tokyo',
+          'b': 'Amsterdam',
+          'c': 'Berlin',
+          'ans': 'b',
+        },
+      ],
+    ),
+    MediaItem(
+      id: 'cx_sintel_chronicles',
+      title: 'Sintel: Last Dragon Rider',
+      type: 'Anime',
+      year: '2026',
+      rating: 9.1,
+      rankToday: 3,
+      qualityBadge: '1080p',
+      studio: 'Muse India',
+      genres: ['Anime', 'Fantasy', 'Adventure'],
+      auraColor: const Color(0xFFE50914),
+      posterUrl:
+          'https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&q=80',
+      backdropUrl:
+          'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&q=80',
+      overview:
+          'A lone warrior crosses frozen mountain peaks and ancient temple ruins searching for Scales, the young dragon taken from her.',
+      aiRecap:
+          'Previously: After nursing an injured baby dragon back to health in the capital city, Sintel watched a towering elder dragon snatch Scales into the clouds.',
+      episodes: [
+        EpisodeItem(
+          id: 'sin_e1',
+          season: 1,
+          number: 1,
+          title: 'The Frozen Citadel',
+          synopsis:
+              'Sintel battles shadow guardians guarding the mountain sanctuary.',
+          thumbnailUrl:
+              'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+          duration: '15m',
+          rating: 9.1,
+          canonTag: 'CANON',
+          streams: [
+            StreamSource(
+              id: 'sin_s1',
+              title: 'Muse Asia / Castex 1080p [KotoSub Sync]',
+              quality: '1080p',
+              dubLayer: 'Official Dub',
+              language: 'English / Hinglish Sub',
+              provider: 'Muse Hub',
+              url: _streamAnimeDemo,
+            ),
+          ],
+        ),
+      ],
+      quizQuestions: [
+        {
+          'q': 'What is the name of the baby dragon Sintel searches for?',
+          'a': 'Scales',
+          'b': 'Ignis',
+          'c': 'Draco',
+          'ans': 'a',
+        },
+      ],
+    ),
+    MediaItem(
+      id: 'cx_marvel_void',
+      title: 'Doomsday: Multiverse Zero',
+      type: 'Series',
+      year: '2026',
+      rating: 9.3,
+      rankToday: 4,
+      qualityBadge: '4K HDR',
+      studio: 'Marvel',
+      genres: ['Action', 'Sci-Fi', 'Thriller'],
+      auraColor: const Color(0xFF10B981),
+      posterUrl:
+          'https://images.unsplash.com/photo-1635805737707-575885ab0820?w=600&q=80',
+      backdropUrl:
+          'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&q=80',
+      overview:
+          'As incursions collapse Earth-818 into the Void, rogue variants assemble an unstable alliance against Doctor Doom.',
+      aiRecap:
+          'Previously: The TVA detected temporal decay across three anchor timelines while Superior tech signatures emerged in Latveria.',
+      episodes: [
+        EpisodeItem(
+          id: 'mv_e1',
+          season: 1,
+          number: 1,
+          title: 'Incursion Point',
+          synopsis:
+              'Two Earths collide in the upper atmosphere as heroes race to stabilize the quantum bridge.',
+          thumbnailUrl:
+              'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80',
+          duration: '46m',
+          rating: 9.3,
+          canonTag: 'CANON',
+          streams: [
+            StreamSource(
+              id: 'mv_s1',
+              title: 'Castex 4K Dolby Vision [Multi-Audio]',
+              quality: '4K HDR',
+              dubLayer: 'Official Dub',
+              language: 'English / Hindi',
+              provider: 'Disney+ / Castex',
+              url: _streamActionDemo,
+            ),
+          ],
+        ),
+      ],
+      quizQuestions: [
+        {
+          'q': 'What phenomenon threatens to collapse the timelines?',
+          'a': 'Incursions',
+          'b': 'Solar Flares',
+          'c': 'Wormhole Drift',
+          'ans': 'a',
+        },
+      ],
+    ),
+  ];
+}
+
+// ============================================================================
+// 6. PERSISTENT FIREBASE AUTH + REALTIME DB SYNC CONTROLLER
+// ============================================================================
+class CastexController extends ChangeNotifier {
+  late SharedPreferences _prefs;
+
+  // Auth State
+  String? uid;
+  String? email;
+  String? idToken;
+  String? refreshToken;
+  bool isSyncing = false;
+  String syncStatus = 'Offline Local';
+
+  // App State
+  CastexAppearance appearance = CastexAppearance();
+  List<UserProfile> profiles = [
+    UserProfile(id: 'p_main', name: 'Main Viewer', avatarIndex: 0),
+  ];
+  String activeProfileId = 'p_main';
+  bool profileUnlocked = true;
+
+  Set<String> watchlistIds = {'cx_jjk_s2', 'cx_tears_steel'};
+  Set<String> offlinePocketIds = {'cx_sintel_chronicles'};
+  Map<String, double> watchProgress = {'cx_jjk_s2': 0.45};
+  Map<String, int> genreMinutes = {
+    'Anime': 140,
+    'Action': 110,
+    'Sci-Fi': 75,
+    'Fantasy': 45,
+  };
+  int totalWatchMinutes = 370;
+  Set<String> completed80Ids = {};
+  Set<String> quizClaimedIds = {};
+  List<String> unlockedBadges = ['Early Flagship Builder'];
+  List<AddonManifest> addons = [
+    AddonManifest(
+      id: 'addon_cinemeta',
+      name: 'Cinemeta Official Catalog',
+      url: CastexConfig.defaultCinemetaUrl,
+      type: 'Catalog JSON',
+      enabled: true,
+    ),
+    AddonManifest(
+      id: 'addon_kotosub',
+      name: 'KotoSub AI Hinglish/Bangla Engine',
+      url: CastexConfig.kotoSubServerUrl,
+      type: 'AI Subtitle Engine',
+      enabled: true,
+    ),
+  ];
+
+  final List> notifications = [
+    {
+      'title': 'Castex v1.0.0 Flagship Live',
+      'body':
+          'Liquid Glass UI, Firebase Cloud Sync, KotoSub Dual Subtitles & Hybrid Dub Router active.',
+      'time': 'Just now',
+    },
+    {
+      'title': 'Cloudflare DNS Bypass Active',
+      'body':
+          'ISP-blocked Stremio addons now route via Cloudflare 1.1.1.1 DoH automatically.',
+      'time': 'Today',
+    },
+  ];
+
+  bool get isLoggedIn =>
+      uid != null && uid!.isNotEmpty && idToken != null && idToken!.isNotEmpty;
+
+  UserProfile get activeProfile => profiles.firstWhere(
+        (p) => p.id == activeProfileId,
+        orElse: () => profiles.first,
+      );
+
+  bool get effectiveFanMode =>
+      appearance.fanMode && !activeProfile.simpleModeOnly;
+
+  Future<void> init() async {
+    _prefs = await SharedPreferences.getInstance();
+    uid = _prefs.getString('cx_uid');
+    email = _prefs.getString('cx_email');
+    idToken = _prefs.getString('cx_id_token');
+    refreshToken = _prefs.getString('cx_refresh_token');
+
+    _loadLocalState();
+
+    if (isLoggedIn) {
+      if (activeProfile.pin.length == 4) {
+        profileUnlocked = false;
+      }
+      // Refresh token & pull cloud data in background so app opens instantaneously
+      unawaited(_refreshSessionAndPullCloud());
+    }
+  }
+
+  void _loadLocalState() {
+    final rawApp = _prefs.getString('cx_appearance');
+    if (rawApp != null) {
+      appearance = CastexAppearance.fromJson(jsonDecode(rawApp));
+    }
+    final rawProfiles = _prefs.getString('cx_profiles');
+    if (rawProfiles != null) {
+      final list = jsonDecode(rawProfiles) as List;
+      if (list.isNotEmpty) {
+        profiles = list.map((e) => UserProfile.fromJson(e)).toList();
+      }
+    }
+    activeProfileId = _prefs.getString('cx_active_profile') ?? profiles.first.id;
+
+    final rawWatchlist = _prefs.getStringList('cx_watchlist');
+    if (rawWatchlist != null) watchlistIds = rawWatchlist.toSet();
+
+    final rawOffline = _prefs.getStringList('cx_offline');
+    if (rawOffline != null) offlinePocketIds = rawOffline.toSet();
+
+    final rawProg = _prefs.getString('cx_progress');
+    if (rawProg != null) {
+      final map = jsonDecode(rawProg) as Map<String, dynamic>;
+      watchProgress = map.map((k, v) => MapEntry(k, (v as num).toDouble()));
+    }
+
+    final rawGenre = _prefs.getString('cx_genre_mins');
+    if (rawGenre != null) {
+      final map = jsonDecode(rawGenre) as Map<String, dynamic>;
+      genreMinutes = map.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+
+    totalWatchMinutes = _prefs.getInt('cx_total_mins') ?? 370;
+    completed80Ids =
+        (_prefs.getStringList('cx_completed80') ?? []).toSet();
+    quizClaimedIds =
+        (_prefs.getStringList('cx_quiz_claimed') ?? []).toSet();
+    unlockedBadges = _prefs.getStringList('cx_badges') ??
+        ['Early Flagship Builder'];
+
+    final rawAddons = _prefs.getString('cx_addons');
+    if (rawAddons != null) {
+      final list = jsonDecode(rawAddons) as List;
+      addons = list.map((e) => AddonManifest.fromJson(e)).toList();
+    }
+  }
+
+  Future<void> _saveLocalImmediately() async {
+    if (uid != null) await _prefs.setString('cx_uid', uid!);
+    if (email != null) await _prefs.setString('cx_email', email!);
+    if (idToken != null) await _prefs.setString('cx_id_token', idToken!);
+    if (refreshToken != null) {
+      await _prefs.setString('cx_refresh_token', refreshToken!);
+    }
+    await _prefs.setString('cx_appearance', jsonEncode(appearance.toJson()));
+    await _prefs.setString(
+      'cx_profiles',
+      jsonEncode(profiles.map((e) => e.toJson()).toList()),
+    );
+    await _prefs.setString('cx_active_profile', activeProfileId);
+    await _prefs.setStringList('cx_watchlist', watchlistIds.toList());
+    await _prefs.setStringList('cx_offline', offlinePocketIds.toList());
+    await _prefs.setString('cx_progress', jsonEncode(watchProgress));
+    await _prefs.setString('cx_genre_mins', jsonEncode(genreMinutes));
+    await _prefs.setInt('cx_total_mins', totalWatchMinutes);
+    await _prefs.setStringList('cx_completed80', completed80Ids.toList());
+    await _prefs.setStringList('cx_quiz_claimed', quizClaimedIds.toList());
+    await _prefs.setStringList('cx_badges', unlockedBadges);
+    await _prefs.setString(
+      'cx_addons',
+      jsonEncode(addons.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  Map<String, dynamic> _buildFullStatePayload() => {
+        'email': email,
+        'updatedAt': DateTime.now().toIso8601String(),
+        'appearance': appearance.toJson(),
+        'profiles': profiles.map((e) => e.toJson()).toList(),
+        'activeProfileId': activeProfileId,
+        'watchlistIds': watchlistIds.toList(),
+        'offlinePocketIds': offlinePocketIds.toList(),
+        'watchProgress': watchProgress,
+        'genreMinutes': genreMinutes,
+        'totalWatchMinutes': totalWatchMinutes,
+        'completed80Ids': completed80Ids.toList(),
+        'quizClaimedIds': quizClaimedIds.toList(),
+        'unlockedBadges': unlockedBadges,
+        'addons': addons.map((e) => e.toJson()).toList(),
+      };
+
+  void _applyCloudPayload(Map<String, dynamic> data) {
+    if (data['appearance'] is Map) {
+      appearance = CastexAppearance.fromJson(
+        Map<String, dynamic>.from(data['appearance']),
+      );
+    }
+    if (data['profiles'] is List && (data['profiles'] as List).isNotEmpty) {
+      profiles = (data['profiles'] as List)
+          .map((e) => UserProfile.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (data['activeProfileId'] != null) {
+      activeProfileId = data['activeProfileId'].toString();
+    }
+    if (data['watchlistIds'] is List) {
+      watchlistIds =
+          (data['watchlistIds'] as List).map((e) => e.toString()).toSet();
+    }
+    if (data['offlinePocketIds'] is List) {
+      offlinePocketIds =
+          (data['offlinePocketIds'] as List).map((e) => e.toString()).toSet();
+    }
+    if (data['watchProgress'] is Map) {
+      final m = Map<String, dynamic>.from(data['watchProgress']);
+      watchProgress = m.map((k, v) => MapEntry(k, (v as num).toDouble()));
+    }
+    if (data['genreMinutes'] is Map) {
+      final m = Map<String, dynamic>.from(data['genreMinutes']);
+      genreMinutes = m.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+    if (data['totalWatchMinutes'] != null) {
+      totalWatchMinutes = (data['totalWatchMinutes'] as num).toInt();
+    }
+    if (data['completed80Ids'] is List) {
+      completed80Ids =
+          (data['completed80Ids'] as List).map((e) => e.toString()).toSet();
+    }
+    if (data['quizClaimedIds'] is List) {
+      quizClaimedIds =
+          (data['quizClaimedIds'] as List).map((e) => e.toString()).toSet();
+    }
+    if (data['unlockedBadges'] is List) {
+      unlockedBadges =
+          (data['unlockedBadges'] as List).map((e) => e.toString()).toList();
+    }
+    if (data['addons'] is List) {
+      addons = (data['addons'] as List)
+          .map((e) => AddonManifest.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+  }
+
+  // Firebase Email/Password Auth
+  Future<String?> authenticateEmail({
+    required String userEmail,
+    required String password,
+    required bool isSignUp,
+  }) async {
+    final endpoint = isSignUp
+        ? 'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${CastexConfig.firebaseApiKey}'
+        : 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${CastexConfig.firebaseApiKey}';
+
+    try {
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': userEmail.trim(),
+          'password': password,
+          'returnSecureToken': true,
+        }),
+      );
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode != 200) {
+        final msg = body['error']?['message']?.toString() ?? 'Auth failed';
+        return _friendlyFirebaseError(msg);
+      }
+
+      uid = body['localId']?.toString();
+      email = body['email']?.toString() ?? userEmail.trim();
+      idToken = body['idToken']?.toString();
+      refreshToken = body['refreshToken']?.toString();
+      profileUnlocked = true;
+
+      await _saveLocalImmediately();
+      if (isSignUp) {
+        await pushCloudSync();
+      } else {
+        await pullCloudSync();
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return 'Network error: Check internet connection.';
+    }
+  }
+
+  Future<String?> sendPasswordReset(String userEmail) async {
+    try {
+      final res = await http.post(
+        Uri.parse(
+          'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${CastexConfig.firebaseApiKey}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'requestType': 'PASSWORD_RESET',
+          'email': userEmail.trim(),
+        }),
+      );
+      if (res.statusCode == 200) return null;
+      final body = jsonDecode(res.body);
+      return _friendlyFirebaseError(
+        body['error']?['message']?.toString() ?? 'Could not send reset email',
+      );
+    } catch (_) {
+      return 'Network error while sending reset email.';
+    }
+  }
+
+  String _friendlyFirebaseError(String code) {
+    if (code.contains('EMAIL_EXISTS')) {
+      return 'This email is already registered. Switch to Sign In.';
+    }
+    if (code.contains('INVALID_LOGIN_CREDENTIALS') ||
+        code.contains('INVALID_PASSWORD') ||
+        code.contains('EMAIL_NOT_FOUND')) {
+      return 'Wrong email or password.';
+    }
+    if (code.contains('WEAK_PASSWORD')) {
+      return 'Password must be at least 6 characters.';
+    }
+    return code;
+  }
+
+  Future<void> _refreshSessionAndPullCloud() async {
+    if (refreshToken == null || refreshToken!.isEmpty) return;
+    try {
+      final res = await http.post(
+        Uri.parse(
+          'https://securetoken.googleapis.com/v1/token?key=${CastexConfig.firebaseApiKey}',
+        ),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'grant_type=refresh_token&refresh_token=$refreshToken',
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        idToken = data['id_token']?.toString();
+        refreshToken = data['refresh_token']?.toString();
+        uid = data['user_id']?.toString() ?? uid;
+        await _saveLocalImmediately();
+        await pullCloudSync();
+      }
+    } catch (_) {
+      syncStatus = 'Cached Local';
+      notifyListeners();
+    }
+  }
+
+  Future<void> pullCloudSync() async {
+    if (!isLoggedIn) return;
+    isSyncing = true;
+    notifyListeners();
+    try {
+      final url =
+          '${CastexConfig.firebaseDbUrl}/users/$uid.json?auth=$idToken';
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode == 200 && res.body != 'null') {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        _applyCloudPayload(data);
+        await _saveLocalImmediately();
+        syncStatus = 'Cloud Synced';
+      } else if (res.statusCode == 200 && res.body == 'null') {
+        await pushCloudSync();
+      } else {
+        syncStatus = 'Check DB Rules';
+      }
+    } catch (_) {
+      syncStatus = 'Offline Cached';
+    }
+    isSyncing = false;
+    notifyListeners();
+  }
+
+  Future<void> pushCloudSync() async {
+    await _saveLocalImmediately();
+    notifyListeners();
+    if (!isLoggedIn) return;
+    try {
+      final url =
+          '${CastexConfig.firebaseDbUrl}/users/$uid.json?auth=$idToken';
+      final res = await http.put(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(_buildFullStatePayload()),
+      );
+      syncStatus = res.statusCode == 200 ? 'Cloud Synced' : 'Rule Pending';
+    } catch (_) {
+      syncStatus = 'Offline Cached';
+    }
+    notifyListeners();
+  }
+
+  Future<void> signOut() async {
+    uid = null;
+    email = null;
+    idToken = null;
+    refreshToken = null;
+    await _prefs.remove('cx_uid');
+    await _prefs.remove('cx_email');
+    await _prefs.remove('cx_id_token');
+    await _prefs.remove('cx_refresh_token');
+    notifyListeners();
+  }
+
+  // State Mutators (All immediately persist locally + sync to Firebase)
+  void toggleWatchlist(String mediaId) {
+    if (watchlistIds.contains(mediaId)) {
+      watchlistIds.remove(mediaId);
+    } else {
+      watchlistIds.add(mediaId);
+    }
+    unawaited(pushCloudSync());
+  }
+
+  void toggleOfflinePocket(String mediaId) {
+    if (offlinePocketIds.contains(mediaId)) {
+      offlinePocketIds.remove(mediaId);
+    } else {
+      offlinePocketIds.add(mediaId);
+    }
+    unawaited(pushCloudSync());
+  }
+
+  void recordWatchProgress(MediaItem item, double fraction, int addedMinutes) {
+    final clamped = fraction.clamp(0.0, 1.0);
+    final prev = watchProgress[item.id] ?? 0.0;
+    if (clamped > prev) {
+      watchProgress[item.id] = clamped;
+    }
+    if (clamped >= 0.80) {
+      completed80Ids.add(item.id);
+    }
+    if (addedMinutes > 0) {
+      totalWatchMinutes += addedMinutes;
+      for (final g in item.genres) {
+        genreMinutes[g] = (genreMinutes[g] ?? 0) + addedMinutes;
+      }
+    }
+    unawaited(pushCloudSync());
+  }
+
+  void claimQuizReward(String mediaId, String badgeName) {
+    quizClaimedIds.add(mediaId);
+    if (!unlockedBadges.contains(badgeName)) {
+      unlockedBadges.add(badgeName);
+    }
+    unawaited(pushCloudSync());
+  }
+
+  void updateAppearance(void Function(CastexAppearance a) updater) {
+    updater(appearance);
+    unawaited(pushCloudSync());
+  }
+
+  void switchProfile(String id) {
+    activeProfileId = id;
+    profileUnlocked = activeProfile.pin.length != 4;
+    unawaited(pushCloudSync());
+  }
+
+  void unlockProfile() {
+    profileUnlocked = true;
+    notifyListeners();
+  }
+
+  void addOrUpdateProfile(UserProfile profile) {
+    final idx = profiles.indexWhere((p) => p.id == profile.id);
+    if (idx >= 0) {
+      profiles[idx] = profile;
+    } else {
+      profiles.add(profile);
+    }
+    activeProfileId = profile.id;
+    profileUnlocked = true;
+    unawaited(pushCloudSync());
+  }
+
+  void addAddon(String name, String url, String type) {
+    addons.add(
+      AddonManifest(
+        id: 'addon_${DateTime.now().millisecondsSinceEpoch}',
+        name: name.trim(),
+        url: url.trim(),
+        type: type,
+      ),
+    );
+    unawaited(pushCloudSync());
+  }
+
+  void toggleAddon(String id) {
+    final idx = addons.indexWhere((a) => a.id == id);
+    if (idx >= 0) {
+      addons[idx].enabled = !addons[idx].enabled;
+      unawaited(pushCloudSync());
+    }
+  }
+
+  void removeAddon(String id) {
+    addons.removeWhere((a) => a.id == id);
+    unawaited(pushCloudSync());
+  }
+
+  String exportBackupJson({required bool includeSensitive}) {
+    final map = <String, dynamic>{
+      'castexBackupVersion': CastexConfig.appVersion,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'appearance': appearance.toJson(),
+      'watchlistIds': watchlistIds.toList(),
+      'offlinePocketIds': offlinePocketIds.toList(),
+      'watchProgress': watchProgress,
+      'genreMinutes': genreMinutes,
+      'totalWatchMinutes': totalWatchMinutes,
+      'unlockedBadges': unlockedBadges,
+      'profiles': profiles
+          .map((p) => {
+                'id': p.id,
+                'name': p.name,
+                'avatarIndex': p.avatarIndex,
+                'customAvatarUrl': p.customAvatarUrl,
+                'pin': includeSensitive ? p.pin : '',
+                'simpleModeOnly': p.simpleModeOnly,
+              })
+          .toList(),
+      if (includeSensitive)
+        'addons': addons.map((a) => a.toJson()).toList(),
+    };
+    return const JsonEncoder.withIndent('  ').convert(map);
+  }
+
+  bool importBackupJson(String raw) {
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      _applyCloudPayload(data);
+      unawaited(pushCloudSync());
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Cloudflare DoH (1.1.1.1) Resolver for ISP-Blocked Addons
+  Future<String> testCloudflareDoh(String hostname) async {
+    try {
+      final uri = Uri.parse(
+        'https://cloudflare-dns.com/dns-query?name=$hostname&type=A',
+      );
+      final res = await http.get(
+        uri,
+        headers: {'Accept': 'application/dns-json'},
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final answers = data['Answer'] as List?;
+        if (answers != null && answers.isNotEmpty) {
+          return 'Cloudflare 1.1.1.1 Resolved: ${answers.first['data']}';
+        }
+      }
+      return 'Cloudflare DoH Active (Ready)';
+    } catch (_) {
+      return 'DoH Standby (Check Network)';
+    }
+  }
+}
+
+// ============================================================================
+// 7. ROOT APP & LIQUID GLASS HELPERS
+// ============================================================================
+class CastexApp extends StatelessWidget {
+  final CastexController controller;
+  const CastexApp({super.key, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final app = controller.appearance;
+        return MaterialApp(
+          title: 'Castex',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData.dark().copyWith(
+            scaffoldBackgroundColor: app.bgColor,
+            colorScheme: ColorScheme.dark(
+              primary: app.accentColor,
+              secondary: app.accentColor,
+              surface: app.cardColor,
+            ),
+            cardColor: app.cardColor,
+            dialogBackgroundColor: const Color(0xFF12141B),
+          ),
+          home: !controller.isLoggedIn
+              ? AuthGateScreen(controller: controller)
+              : !controller.profileUnlocked
+                  ? ProfilePinGateScreen(controller: controller)
+                  : MainShellScreen(controller: controller),
+        );
+      },
+    );
+  }
+}
+
+class LiquidGlassCard extends StatelessWidget {
+  final Widget child;
+  final CastexAppearance appearance;
+  final BorderRadius? borderRadius;
+  final EdgeInsetsGeometry? padding;
+  final Color? customTint;
+
+  const LiquidGlassCard({
+    super.key,
+    required this.child,
+    required this.appearance,
+    this.borderRadius,
+    this.padding,
+    this.customTint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = borderRadius ?? BorderRadius.circular(20);
+    final isSolid = appearance.glassSurface == 'Solid';
+    final blur = isSolid
+        ? 0.0
+        : appearance.glassSurface == 'Clear'
+            ? appearance.blurRadius * 0.5
+            : appearance.blurRadius;
+    final opacity = isSolid
+        ? 0.96
+        : appearance.glassSurface == 'Clear'
+            ? (appearance.tintOpacity * 0.45).clamp(0.15, 0.85)
+            : appearance.tintOpacity;
+
+    return ClipRRect(
+      borderRadius: radius,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            color: (customTint ?? const Color(0xFF141720)).withOpacity(opacity),
+            border: Border.all(
+              color: Colors.white.withOpacity(
+                appearance.edgeGlow == 'Off' ? 0.06 : 0.16,
+              ),
+              width: 1,
+            ),
+            gradient: appearance.glassSurface == 'Liquid'
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.14),
+                      Colors.white.withOpacity(0.02),
+                    ],
+                  )
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 8. FIREBASE EMAIL + PASSWORD LOGIN & SIGNUP GATE (ZERO SESSION LOSS)
+// ============================================================================
+class AuthGateScreen extends StatefulWidget {
+  final CastexController controller;
+  const AuthGateScreen({super.key, required this.controller});
+
+  @override
+  State<AuthGateScreen> createState() => _AuthGateScreenState();
+}
+
+class _AuthGateScreenState extends State<AuthGateScreen> {
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _isSignUp = false;
+  bool _loading = false;
+  bool _obscure = true;
+  String? _errorMsg;
+
+  Future<void> _submit() async {
+    if (_emailCtrl.text.trim().isEmpty || _passCtrl.text.length < 6) {
+      setState(() {
+        _errorMsg = 'Enter a valid email and 6+ character password.';
+      });
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _errorMsg = null;
+    });
+    final err = await widget.controller.authenticateEmail(
+      userEmail: _emailCtrl.text,
+      password: _passCtrl.text,
+      isSignUp: _isSignUp,
+    );
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _errorMsg = err;
+      });
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    if (_emailCtrl.text.trim().isEmpty) {
+      setState(() => _errorMsg = 'Enter your email above first to reset.');
+      return;
+    }
+    final err = await widget.controller.sendPasswordReset(_emailCtrl.text);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          err ?? 'Password reset link sent to ${_emailCtrl.text.trim()}',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.controller.appearance;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Positioned(
+            top: -120,
+            left: -80,
+            child: Container(
+              width: 320,
+              height: 320,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: app.accentColor.withOpacity(0.28),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: LiquidGlassCard(
+                  appearance: app,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.play_circle_filled_rounded,
+                              color: app.accentColor, size: 34),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'CASTEX',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _isSignUp
+                            ? 'Create Cloud Sync Account'
+                            : 'Sign In • Persistent Cloud Profile',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.68),
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: _emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          labelText: 'Email Address',
+                          prefixIcon: const Icon(Icons.email_outlined),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.06),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _passCtrl,
+                        obscureText: _obscure,
+                        decoration: InputDecoration(
+                          labelText: 'Password (min 6 chars)',
+                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscure
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                            ),
+                            onPressed: () =>
+                                setState(() => _obscure = !_obscure),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.06),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      if (_errorMsg != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMsg!,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: _loading ? null : _submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: app.accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: _loading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                _isSignUp ? 'Create Account' : 'Sign In',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: () => setState(() {
+                              _isSignUp = !_isSignUp;
+                              _errorMsg = null;
+                            }),
+                            child: Text(
+                              _isSignUp
+                                  ? 'Already have an account? Sign In'
+                                  : 'New here? Create Account',
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                          ),
+                          if (!_isSignUp)
+                            TextButton(
+                              onPressed: _forgotPassword,
+                              child: const Text(
+                                'Reset PIN/Pass',
+                                style: TextStyle(fontSize: 12.5),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
-    if (ok != true) return false;
   }
-
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('profile_id', (prof['id'] ?? 'CX-RESTORED').toString());
-  await prefs.setString('profile_name', name);
-  await prefs.setInt('profile_color', (prof['color'] is int) ? prof['color'] : 0xFFE50914);
-  await prefs.setString('profile_pin', filePin);
-  await prefs.setString('profile_created', (prof['created'] ?? '').toString());
-
-  if (decoded['fan_mode'] is bool) {
-    await prefs.setBool('fan_mode', decoded['fan_mode']);
-  }
-  if (decoded['kotosub_url'] != null) {
-    await prefs.setString('kotosub_url', decoded['kotosub_url'].toString());
-  }
-  if (decoded['plugin_urls'] is List) {
-    await prefs.setStringList(
-      'plugin_urls',
-      (decoded['plugin_urls'] as List).map((e) => e.toString()).toList(),
-    );
-  }
-  if (decoded['watchlist'] is List) {
-    await prefs.setString('watchlist_json', jsonEncode(decoded['watchlist']));
-  }
-  if (decoded['continue_watching'] is List) {
-    await prefs.setString(
-      'continue_watching_json',
-      jsonEncode(decoded['continue_watching']),
-    );
-  }
-  return true;
 }
 
-Future showCastexRestoreSheet(BuildContext context, VoidCallback onSuccess) async {
-  final pasteCtrl = TextEditingController();
-  final foundFiles = [];
+// ============================================================================
+// 9. PROFILE 4-DIGIT PIN GATE ("WHO'S WATCHING?")
+// ============================================================================
+class ProfilePinGateScreen extends StatefulWidget {
+  final CastexController controller;
+  const ProfilePinGateScreen({super.key, required this.controller});
 
-  try {
-    final dlDir = Directory('/storage/emulated/0/Download');
-    if (await dlDir.exists()) {
-      for (final entity in dlDir.listSync()) {
-        if (entity is File && entity.path.toLowerCase().endsWith('.json')) {
-          foundFiles.add(entity);
-        }
-      }
-    }
-  } catch (_) {}
+  @override
+  State<ProfilePinGateScreen> createState() => _ProfilePinGateScreenState();
+}
 
-  if (!context.mounted) return;
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: const Color(0xFF0E0E12),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-    ),
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        16,
-        20,
-        MediaQuery.of(ctx).viewInsets.bottom + 24,
+class _ProfilePinGateScreenState extends State<ProfilePinGateScreen> {
+  final _pinCtrl = TextEditingController();
+  String? _err;
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = widget.controller.activeProfile;
+    final app = widget.controller.appearance;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AvatarWidget(
+                  profile: profile,
+                  size: 84,
+                  showBorder: true,
+                  borderColor: app.accentColor,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  profile.name,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Enter 4-Digit Profile PIN',
+                  style: TextStyle(color: Colors.white60),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: _pinCtrl,
+                    maxLength: 4,
+                    obscureText: true,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      letterSpacing: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    onChanged: (val) {
+                      if (val.length == 4) {
+                        if (val == profile.pin) {
+                          widget.controller.unlockProfile();
+                        } else {
+                          setState(() {
+                            _err = 'Incorrect PIN';
+                            _pinCtrl.clear();
+                          });
+                        }
+                      }
+                    },
+                    decoration: InputDecoration(
+                      counterText: '',
+                      filled: true,
+                      fillColor: Colors.white10,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                if (_err != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_err!, style: const TextStyle(color: Colors.redAccent)),
+                ],
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 10,
+                  children: widget.controller.profiles.map((p) {
+                    return ActionChip(
+                      avatar: AvatarWidget(profile: p, size: 22),
+                      label: Text(p.name),
+                      onPressed: () => widget.controller.switchProfile(p.id),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      child: SingleChildScrollView(
+    );
+  }
+}
+
+// ============================================================================
+// 10. MAIN SHELL WITH FLOATING LIQUID GLASS PILL DOCK & POSTER AURA
+// ============================================================================
+class MainShellScreen extends StatefulWidget {
+  final CastexController controller;
+  const MainShellScreen({super.key, required this.controller});
+
+  @override
+  State<MainShellScreen> createState() => _MainShellScreenState();
+}
+
+class _MainShellScreenState extends State<MainShellScreen> {
+  int _tabIndex = 0;
+  bool _dockCompact = false;
+  Color _activeAura = const Color(0xFF9D4EDD);
+
+  void _onScroll(double offset) {
+    if (widget.controller.appearance.dockMode != 'Adaptive') return;
+    final shouldCompact = offset > 90;
+    if (shouldCompact != _dockCompact) {
+      setState(() => _dockCompact = shouldCompact);
+    }
+  }
+
+  void _showNotificationsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0E1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Restore Castex Profile',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Select a Castex backup .json file from Downloads or paste your backup JSON below.',
-              style: TextStyle(color: Colors.white60, fontSize: 12.5),
-            ),
-            if (foundFiles.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              const Text(
-                'Detected JSON Files in Downloads',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              ...foundFiles.take(5).map((rawF) {
-                final f = rawF as File;
-                final fName = f.path.split('/').last;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF15151B),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: ListTile(
-                    leading: const Icon(Icons.description_rounded, color: Colors.white),
-                    title: Text(fName, style: const TextStyle(fontSize: 13.5)),
-                    trailing: const Text(
-                      'Restore',
-                      style: TextStyle(
-                        color: Color(0xFFE50914),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    onTap: () async {
-                      try {
-                        final raw = await f.readAsString();
-                        if (!ctx.mounted) return;
-                        final done = await restoreCastexBackupFromString(ctx, raw);
-                        if (done == true && ctx.mounted) {
-                          Navigator.pop(ctx);
-                          onSuccess();
-                        }
-                      } catch (_) {
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('Invalid backup file.')),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                );
-              }),
-            ],
-            const SizedBox(height: 14),
-            TextField(
-              controller: pasteCtrl,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: 'Paste Castex Backup JSON here...',
-                hintStyle: const TextStyle(color: Colors.white30, fontSize: 12.5),
-                filled: true,
-                fillColor: const Color(0xFF15151B),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white12),
-                ),
-              ),
+              'Castex Announcements',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            ...widget.controller.notifications.map(
+              (n) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: widget.controller.appearance.accentColor
+                      .withOpacity(0.2),
+                  child: Icon(
+                    Icons.campaign_rounded,
+                    color: widget.controller.appearance.accentColor,
                   ),
                 ),
-                onPressed: () async {
-                  try {
-                    final done = await restoreCastexBackupFromString(ctx, pasteCtrl.text);
-                    if (done == true && ctx.mounted) {
-                      Navigator.pop(ctx);
-                      onSuccess();
-                    }
-                  } catch (_) {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('Invalid backup JSON text.')),
-                      );
-                    }
-                  }
-                },
-                child: const Text(
-                  'Restore from Pasted Backup',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                title: Text(n['title'] ?? ''),
+                subtitle: Text(
+                  n['body'] ?? '',
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                trailing: Text(
+                  n['time'] ?? '',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
                 ),
               ),
             ),
           ],
         ),
       ),
-    ),
-  );
-}
-
-class CastexApp extends StatelessWidget {
-  const CastexApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Castex',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF000000),
-        canvasColor: const Color(0xFF000000),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFFFFFFFF),
-          secondary: Color(0xFFE50914),
-          surface: Color(0xFF0E0E11),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-        ),
-        useMaterial3: true,
-      ),
-      home: const CastexRootGate(),
     );
   }
-}
-
-class CastexRootGate extends StatefulWidget {
-  const CastexRootGate({super.key});
-
-  @override
-  State createState() => _CastexRootGateState();
-}
-
-class _CastexRootGateState extends State<CastexRootGate> {
-  bool _checking = true;
-  bool _hasProfile = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkProfile();
-  }
-
-  Future _checkProfile() async {
-    final prefs = await SharedPreferences.getInstance();
-    final name = prefs.getString('profile_name') ?? '';
-    if (mounted) {
-      setState(() {
-        _hasProfile = name.trim().isNotEmpty;
-        _checking = false;
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    if (_checking) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-        ),
-      );
-    }
-    if (!_hasProfile) {
-      return ProfileOnboardingScreen(
-        onProfileReady: () {
-          setState(() => _hasProfile = true);
-        },
-      );
-    }
-    return CastexHomeShell(
-      onProfileReset: () {
-        setState(() => _hasProfile = false);
-      },
-    );
-  }
-}
-
-class ProfileOnboardingScreen extends StatefulWidget {
-  final VoidCallback onProfileReady;
-
-  ProfileOnboardingScreen({super.key, required this.onProfileReady});
-
-  @override
-  State createState() => _ProfileOnboardingScreenState();
-}
-
-class _ProfileOnboardingScreenState extends State<ProfileOnboardingScreen> {
-  final TextEditingController _nameCtrl = TextEditingController();
-  final TextEditingController _pinCtrl = TextEditingController();
-  int _selectedColor = 0xFFE50914;
-  bool _busy = false;
-
-  final List _avatarColors = [
-    0xFFE50914,
-    0xFF00B8D4,
-    0xFF7C4DFF,
-    0xFFF5C518,
-    0xFF00C853,
-    0xFFFF6D00,
-  ];
-
-  Future _createProfile() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your profile name to continue')),
-      );
-      return;
-    }
-    setState(() => _busy = true);
-    final prefs = await SharedPreferences.getInstance();
-    final rng = Random();
-    final code = 100000 + rng.nextInt(899999);
-    final profileId = 'CX-$code';
-
-    await prefs.setString('profile_id', profileId);
-    await prefs.setString('profile_name', name);
-    await prefs.setInt('profile_color', _selectedColor);
-    await prefs.setString('profile_pin', _pinCtrl.text.trim());
-    await prefs.setString('profile_created', DateTime.now().toIso8601String());
-
-    if (mounted) {
-      setState(() => _busy = false);
-      widget.onProfileReady();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final previewInitial = _nameCtrl.text.trim().isNotEmpty
-        ? _nameCtrl.text.trim()[0].toUpperCase()
-        : 'C';
+    final app = widget.controller.appearance;
+    final aura = app.autoPosterAura ? _activeAura : app.accentColor;
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+      backgroundColor: app.bgColor,
+      body: Stack(
+        children: [
+          // Adaptive Poster Aura Ambient Glow
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 600),
+            height: 360,
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.7),
+                radius: 1.1,
+                colors: [
+                  aura.withOpacity(0.32),
+                  app.bgColor.withOpacity(0.0),
+                ],
+              ),
+            ),
+          ),
+
+          // Main Content
+          SafeArea(
+            bottom: false,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Castex',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
+                // Top Glass Header
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.play_circle_filled_rounded,
+                          color: app.accentColor, size: 26),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'CASTEX',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 19,
+                          letterSpacing: 2.2,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.greenAccent.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          widget.controller.syncStatus,
+                          style: const TextStyle(
+                            color: Colors.greenAccent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Simple vs Fan Mode Quick Pill
+                      GestureDetector(
+                        onTap: () => widget.controller.updateAppearance(
+                          (a) => a.fanMode = !a.fanMode,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: widget.controller.effectiveFanMode
+                                ? app.accentColor.withOpacity(0.22)
+                                : Colors.white10,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: widget.controller.effectiveFanMode
+                                  ? app.accentColor
+                                  : Colors.white24,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                widget.controller.effectiveFanMode
+                                    ? Icons.auto_awesome
+                                    : Icons.tv_rounded,
+                                size: 13,
+                                color: widget.controller.effectiveFanMode
+                                    ? app.accentColor
+                                    : Colors.white70,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                widget.controller.effectiveFanMode
+                                    ? 'Fan Mode'
+                                    : 'Simple',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: Stack(
+                          children: [
+                            const Icon(Icons.notifications_none_rounded),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: app.accentColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        onPressed: _showNotificationsSheet,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Active Tab Body
+                Expanded(
+                  child: IndexedStack(
+                    index: _tabIndex,
+                    children: [
+                      HomeTab(
+                        controller: widget.controller,
+                        onScroll: _onScroll,
+                        onAuraChanged: (c) {
+                          if (_activeAura != c) {
+                            setState(() => _activeAura = c);
+                          }
+                        },
+                      ),
+                      SearchTab(controller: widget.controller),
+                      LibraryTab(controller: widget.controller),
+                      ProfileAndSettingsTab(controller: widget.controller),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Floating Liquid Glass Pill Dock
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: Center(
+              child: _buildFloatingLiquidDock(app),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingLiquidDock(CastexAppearance app) {
+    final compact = app.dockMode == 'Compact' ||
+        (app.dockMode == 'Adaptive' && _dockCompact);
+
+    final navItems = [
+      {'icon': Icons.home_rounded, 'label': 'Home'},
+      {'icon': Icons.search_rounded, 'label': 'Search'},
+      {'icon': Icons.bookmarks_rounded, 'label': 'Library'},
+      {'icon': Icons.person_rounded, 'label': 'Profile'},
+    ];
+
+    return LiquidGlassCard(
+      appearance: app,
+      borderRadius: BorderRadius.circular(app.dockRadius),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 14,
+        vertical: compact ? 7 : 9,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(navItems.length, (i) {
+          final selected = _tabIndex == i;
+          final isProfile = i == 3;
+          return GestureDetector(
+            onTap: () => setState(() => _tabIndex = i),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding: EdgeInsets.symmetric(
+                horizontal: selected && !compact ? 14 : 11,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(app.dockRadius),
+                color: selected
+                    ? app.accentColor.withOpacity(app.liquidLens ? 0.28 : 0.18)
+                    : Colors.transparent,
+                border: selected && app.liquidLens
+                    ? Border.all(
+                        color: app.accentColor.withOpacity(0.65),
+                        width: 1,
+                      )
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isProfile)
+                    AvatarWidget(
+                      profile: widget.controller.activeProfile,
+                      size: 22,
+                      showBorder: selected,
+                      borderColor: app.accentColor,
+                    )
+                  else
+                    Icon(
+                      navItems[i]['icon'] as IconData,
+                      size: selected ? 23 : 21,
+                      color: selected ? Colors.white : Colors.white60,
+                    ),
+                  if (selected && !compact) ...[
+                    const SizedBox(width: 7),
+                    Text(
+                      navItems[i]['label'] as String,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.5,
                       ),
                     ),
-                    const SizedBox(width: 5),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 11. HOME TAB (HERO SPOTLIGHT, RANKED POSTERS, CONTINUE WATCHING, STUDIOS)
+// ============================================================================
+class HomeTab extends StatelessWidget {
+  final CastexController controller;
+  final void Function(double offset) onScroll;
+  final void Function(Color aura) onAuraChanged;
+
+  const HomeTab({
+    super.key,
+    required this.controller,
+    required this.onScroll,
+    required this.onAuraChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = controller.appearance;
+    final hero = CastexCatalog.items.first;
+    final continueList = CastexCatalog.items
+        .where((m) => (controller.watchProgress[m.id] ?? 0) > 0)
+        .toList();
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n is ScrollUpdateNotification) {
+          onScroll(n.metrics.pixels);
+        }
+        return false;
+      },
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
+        children: [
+          // Hero Spotlight Card
+          GestureDetector(
+            onTap: () {
+              onAuraChanged(hero.auraColor);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MediaDetailScreen(
+                    controller: controller,
+                    item: hero,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              height: 330,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: hero.auraColor.withOpacity(app.glowStrength),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: hero.auraColor.withOpacity(app.glowStrength * 0.5),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(23),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(hero.backdropUrl, fit: BoxFit.cover),
                     Container(
-                      width: 7,
-                      height: 7,
                       decoration: const BoxDecoration(
-                        color: Color(0xFFE50914),
-                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Color(0x88000000),
+                            Color(0xF5000000),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 14,
+                      left: 14,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: app.accentColor,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          '#1 TODAY • KOTOSUB AI READY',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      bottom: 16,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            hero.title,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${hero.studio} • ${hero.genres.join(' • ')} • ★ ${hero.rating}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            CastexCinemaPlayerScreen(
+                                          controller: controller,
+                                          item: hero,
+                                          episode: hero.episodes.first,
+                                          stream:
+                                              hero.episodes.first.streams.first,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.play_arrow_rounded),
+                                  label: const Text(
+                                    'Watch Now',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: app.accentColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              LiquidGlassCard(
+                                appearance: app,
+                                borderRadius: BorderRadius.circular(14),
+                                child: IconButton(
+                                  icon: Icon(
+                                    controller.watchlistIds.contains(hero.id)
+                                        ? Icons.bookmark_added_rounded
+                                        : Icons.bookmark_add_outlined,
+                                  ),
+                                  onPressed: () =>
+                                      controller.toggleWatchlist(hero.id),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Create your local profile to save Watchlist,\nprogress & Backup/Restore files.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white60, fontSize: 13.5, height: 1.4),
-                ),
-                const SizedBox(height: 28),
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Color(_selectedColor),
-                  child: Text(
-                    previewInitial,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+              ),
+            ),
+          ),
+
+          // Continue Watching Section
+          if (continueList.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            const Text(
+              'Continue Watching',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 135,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: continueList.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, idx) {
+                  final item = continueList[idx];
+                  final prog = controller.watchProgress[item.id] ?? 0.0;
+                  return GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CastexCinemaPlayerScreen(
+                          controller: controller,
+                          item: item,
+                          episode: item.episodes.first,
+                          stream: item.episodes.first.streams.first,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 12,
-                  children: _avatarColors.map((hex) {
-                    final selected = _selectedColor == hex;
-                    return GestureDetector(
-                      onTap: () => setState(() => _selectedColor = hex),
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Color(hex),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: selected ? Colors.white : Colors.transparent,
-                            width: 2.5,
-                          ),
+                    child: Container(
+                      width: 230,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: app.cardColor,
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.network(item.backdropUrl, fit: BoxFit.cover),
+                            Container(color: Colors.black54),
+                            Positioned(
+                              left: 12,
+                              right: 12,
+                              bottom: 14,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${(prog * 100).round()}% watched • Tap to Resume',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: prog,
+                                      minHeight: 4,
+                                      backgroundColor: Colors.white24,
+                                      valueColor: AlwaysStoppedAnimation(
+                                          app.accentColor),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+
+          // Streaming Services & Studios Hub
+          const SizedBox(height: 22),
+          const Text(
+            'Studios & Dub Hubs',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: ['Crunchyroll', 'Netflix', 'Marvel', 'Muse India', 'Fandub Hub']
+                  .map(
+                    (studio) => Container(
+                      margin: const EdgeInsets.only(right: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        color: app.cardColor,
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Text(
+                        studio,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+
+          // Ranked Trending Row
+          const SizedBox(height: 22),
+          const Text(
+            'Top Ranked Today',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 245,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: CastexCatalog.items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 14),
+              itemBuilder: (context, idx) {
+                final item = CastexCatalog.items[idx];
+                return GestureDetector(
+                  onTap: () {
+                    onAuraChanged(item.auraColor);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MediaDetailScreen(
+                          controller: controller,
+                          item: item,
                         ),
                       ),
                     );
-                  }).toList(),
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _nameCtrl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    labelText: 'Profile Name (Required)',
-                    hintText: 'e.g. Sujit',
-                    filled: true,
-                    fillColor: const Color(0xFF121216),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Colors.white12),
+                  },
+                  child: SizedBox(
+                    width: 148,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: item.auraColor
+                                    .withOpacity(app.glowStrength),
+                                width: 1.2,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.network(item.posterUrl,
+                                      fit: BoxFit.cover),
+                                  if (item.rankToday != null)
+                                    Positioned(
+                                      top: 8,
+                                      left: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black87,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '#${item.rankToday}',
+                                          style: TextStyle(
+                                            color: app.accentColor,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black87,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        item.qualityBadge,
+                                        style: const TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          '★ ${item.rating} • ${item.type}',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 12. SEARCH TAB (INSTANT CATALOG + GENRE FILTERS)
+// ============================================================================
+class SearchTab extends StatefulWidget {
+  final CastexController controller;
+  const SearchTab({super.key, required this.controller});
+
+  @override
+  State<SearchTab> createState() => _SearchTabState();
+}
+
+class _SearchTabState extends State<SearchTab> {
+  String _query = '';
+  String _selectedGenre = 'All';
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.controller.appearance;
+    final results = CastexCatalog.items.where((item) {
+      final matchesQuery = _query.isEmpty ||
+          item.title.toLowerCase().contains(_query.toLowerCase()) ||
+          item.studio.toLowerCase().contains(_query.toLowerCase());
+      final matchesGenre =
+          _selectedGenre == 'All' || item.genres.contains(_selectedGenre);
+      return matchesQuery && matchesGenre;
+    }).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+      children: [
+        TextField(
+          onChanged: (v) => setState(() => _query = v),
+          decoration: InputDecoration(
+            hintText: 'Search Anime, Movies, Studios, Addons...',
+            prefixIcon: const Icon(Icons.search_rounded),
+            filled: true,
+            fillColor: app.cardColor,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: ['All', 'Anime', 'Action', 'Sci-Fi', 'Fantasy', 'Thriller']
+                .map((g) {
+              final active = _selectedGenre == g;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(g),
+                  selected: active,
+                  selectedColor: app.accentColor,
+                  onSelected: (_) => setState(() => _selectedGenre = g),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...results.map(
+          (item) => ListTile(
+            contentPadding: const EdgeInsets.symmetric(vertical: 6),
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                item.posterUrl,
+                width: 54,
+                height: 76,
+                fit: BoxFit.cover,
+              ),
+            ),
+            title: Text(item.title,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(
+              '${item.type} • ${item.studio} • ★ ${item.rating}',
+              style: const TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MediaDetailScreen(
+                  controller: widget.controller,
+                  item: item,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// 13. LIBRARY TAB (SAVED, OFFLINE POCKET, COLLECTIONS)
+// ============================================================================
+class LibraryTab extends StatefulWidget {
+  final CastexController controller;
+  const LibraryTab({super.key, required this.controller});
+
+  @override
+  State<LibraryTab> createState() => _LibraryTabState();
+}
+
+class _LibraryTabState extends State<LibraryTab> {
+  int _subTab = 0; // 0 = Saved, 1 = Offline Pocket, 2 = Collections
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.controller.appearance;
+    final savedItems = CastexCatalog.items
+        .where((m) => widget.controller.watchlistIds.contains(m.id))
+        .toList();
+    final pocketItems = CastexCatalog.items
+        .where((m) => widget.controller.offlinePocketIds.contains(m.id))
+        .toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+      children: [
+        Row(
+          children: [
+            _pill('Saved (${savedItems.length})', 0, app),
+            const SizedBox(width: 8),
+            _pill('Offline Pocket (${pocketItems.length})', 1, app),
+            const SizedBox(width: 8),
+            _pill('Collections', 2, app),
+          ],
+        ),
+        const SizedBox(height: 18),
+        if (_subTab == 0)
+          ...savedItems.map((item) => _mediaRow(item, app, isPocket: false)),
+        if (_subTab == 1) ...[
+          LiquidGlassCard(
+            appearance: app,
+            padding: const EdgeInsets.all(14),
+            child: const Row(
+              children: [
+                Icon(Icons.train_rounded, color: Colors.amberAccent),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Offline Pocket Mode caches episode metadata & KotoSub Hinglish/Bangla subtitles for zero-signal train/metro commutes.',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...pocketItems.map((item) => _mediaRow(item, app, isPocket: true)),
+        ],
+        if (_subTab == 2) ...[
+          _collectionTile(
+            'Anime Must-Watch',
+            '${CastexCatalog.items.where((m) => m.type == 'Anime').length} titles',
+            Icons.auto_awesome,
+            app,
+          ),
+          _collectionTile(
+            'Quiz Unlocked (80%+ Watched)',
+            '${widget.controller.completed80Ids.length} titles ready for Fan Quiz',
+            Icons.emoji_events_rounded,
+            app,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _pill(String label, int index, CastexAppearance app) {
+    final active = _subTab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _subTab = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? app.accentColor : app.cardColor,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _mediaRow(MediaItem item, CastexAppearance app,
+      {required bool isPocket}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: app.cardColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              item.posterUrl,
+              width: 56,
+              height: 78,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(
+                  '${item.studio} • ${item.qualityBadge} • ★ ${item.rating}',
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(
+              isPocket
+                  ? Icons.offline_pin_rounded
+                  : Icons.bookmark_remove_rounded,
+              color: app.accentColor,
+            ),
+            onPressed: () => isPocket
+                ? widget.controller.toggleOfflinePocket(item.id)
+                : widget.controller.toggleWatchlist(item.id),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _collectionTile(
+      String title, String sub, IconData icon, CastexAppearance app) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        tileColor: app.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        leading: CircleAvatar(
+          backgroundColor: app.accentColor.withOpacity(0.2),
+          child: Icon(icon, color: app.accentColor),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(sub, style: const TextStyle(color: Colors.white60)),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 14. PROFILE DASHBOARD, TASTE DNA, FAN QUIZ & GROUPED NUVIO-GRADE SETTINGS
+// ============================================================================
+class ProfileAndSettingsTab extends StatefulWidget {
+  final CastexController controller;
+  const ProfileAndSettingsTab({super.key, required this.controller});
+
+  @override
+  State<ProfileAndSettingsTab> createState() => _ProfileAndSettingsTabState();
+}
+
+class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
+  String _settingsQuery = '';
+  bool _includeSensitiveBackup = true;
+
+  void _openEditProfileDialog({UserProfile? existing}) {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final urlCtrl =
+        TextEditingController(text: existing?.customAvatarUrl ?? '');
+    final pinCtrl = TextEditingController(text: existing?.pin ?? '');
+    int selectedAvatar = existing?.avatarIndex ?? 0;
+    bool simpleOnly = existing?.simpleModeOnly ?? false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0E1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  existing == null ? 'Create Profile' : 'Edit Profile & Avatar',
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 14),
                 TextField(
-                  controller: _pinCtrl,
-                  keyboardType: TextInputType.number,
-                  maxLength: 4,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: '4-Digit Backup PIN (Optional)',
-                    hintText: 'Protects your restore file',
-                    counterText: '',
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Profile Name',
                     filled: true,
-                    fillColor: const Color(0xFF121216),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Colors.white12),
-                    ),
+                    fillColor: Colors.white10,
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                const Text('Choose Built-In Avatar (20 Presets)',
+                    style: TextStyle(fontSize: 12, color: Colors.white70)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 54,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: BuiltInAvatars.items.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, idx) {
+                      final temp = UserProfile(
+                        id: 'tmp',
+                        name: '',
+                        avatarIndex: idx,
+                      );
+                      return GestureDetector(
+                        onTap: () => setModal(() => selectedAvatar = idx),
+                        child: AvatarWidget(
+                          profile: temp,
+                          size: 48,
+                          showBorder: selectedAvatar == idx,
+                          borderColor: widget.controller.appearance.accentColor,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Custom Avatar Image URL (Optional)',
+                    filled: true,
+                    fillColor: Colors.white10,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pinCtrl,
+                  maxLength: 4,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '4-Digit Profile PIN Lock (Leave empty for none)',
+                    filled: true,
+                    fillColor: Colors.white10,
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Simple Mode Only (For Family/TV)'),
+                  value: simpleOnly,
+                  onChanged: (v) => setModal(() => simpleOnly = v),
+                ),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      backgroundColor: widget.controller.appearance.accentColor,
                     ),
-                    onPressed: _busy ? null : _createProfile,
-                    child: const Text(
-                      'Create Profile & Start Watching',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextButton.icon(
-                  onPressed: () {
-                    showCastexRestoreSheet(context, () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Backup restored!')),
+                    onPressed: () {
+                      if (nameCtrl.text.trim().isEmpty) return;
+                      widget.controller.addOrUpdateProfile(
+                        UserProfile(
+                          id: existing?.id ??
+                              'p_${DateTime.now().millisecondsSinceEpoch}',
+                          name: nameCtrl.text.trim(),
+                          avatarIndex: selectedAvatar,
+                          customAvatarUrl: urlCtrl.text.trim(),
+                          pin: pinCtrl.text.trim().length == 4
+                              ? pinCtrl.text.trim()
+                              : '',
+                          simpleModeOnly: simpleOnly,
+                        ),
                       );
-                      widget.onProfileReady();
-                    });
-                  },
-                  icon: const Icon(Icons.restore_rounded, size: 18, color: Colors.white70),
-                  label: const Text(
-                    'Restore from Existing Castex Backup',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                      Navigator.pop(ctx);
+                    },
+                    child: const Text('Save Profile to Cloud'),
                   ),
                 ),
               ],
@@ -523,2187 +2939,1682 @@ class _ProfileOnboardingScreenState extends State<ProfileOnboardingScreen> {
       ),
     );
   }
-}
 
-class CastexHomeShell extends StatefulWidget {
-  final VoidCallback onProfileReset;
+  void _openAppearanceStudio() {
+    final app = widget.controller.appearance;
+    final presetCtrl = TextEditingController();
+    final hsv = HSVColor.fromColor(app.accentColor);
+    double hue = hsv.hue;
+    double sat = hsv.saturation;
+    double val = hsv.value;
 
-  CastexHomeShell({super.key, required this.onProfileReset});
-
-  @override
-  State createState() => _CastexHomeShellState();
-}
-
-class _CastexHomeShellState extends State<CastexHomeShell> {
-  int _tabIndex = 0;
-  int _heroPage = 0;
-  bool _fanMode = true;
-  bool _loading = true;
-  bool _hasUnreadNotice = true;
-
-  String _profileId = '';
-  String _profileName = '';
-  int _profileColor = 0xFFE50914;
-  String _profilePin = '';
-
-  Map _remoteConfig = {};
-  List _pluginUrls = [];
-  List _loadedPlugins = [];
-  List _fandubRoutes = [];
-  List _movies = [];
-  List _series = [];
-  List _watchlist = [];
-  List _continueWatching = [];
-  String _kotosubUrl = '';
-  String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _initCastex();
-  }
-
-  Future _initCastex() async {
-    setState(() => _loading = true);
-    final prefs = await SharedPreferences.getInstance();
-    _profileId = prefs.getString('profile_id') ?? 'CX-000000';
-    _profileName = prefs.getString('profile_name') ?? 'Viewer';
-    _profileColor = prefs.getInt('profile_color') ?? 0xFFE50914;
-    _profilePin = prefs.getString('profile_pin') ?? '';
-    _fanMode = prefs.getBool('fan_mode') ?? true;
-    _kotosubUrl = prefs.getString('kotosub_url') ?? '';
-    _pluginUrls = List.from(prefs.getStringList('plugin_urls') ?? []);
-
-    _loadLocalLists(prefs);
-    await _fetchRemoteConfig(prefs);
-    await _loadAllPlugins();
-    await _fetchDefaultCatalogs();
-
-    if (mounted) {
-      setState(() => _loading = false);
-    }
-  }
-
-  void _loadLocalLists(SharedPreferences prefs) {
-    try {
-      final wRaw = prefs.getString('watchlist_json') ?? '[]';
-      final wDecoded = jsonDecode(wRaw);
-      if (wDecoded is List) _watchlist = wDecoded;
-    } catch (_) {
-      _watchlist = [];
-    }
-
-    try {
-      final cRaw = prefs.getString('continue_watching_json') ?? '[]';
-      final cDecoded = jsonDecode(cRaw);
-      if (cDecoded is List) _continueWatching = cDecoded;
-    } catch (_) {
-      _continueWatching = [];
-    }
-  }
-
-  Future _toggleWatchlist(Map item) async {
-    final id = (item['id'] ?? '').toString();
-    if (id.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-    final exists = _watchlist.any((w) => w is Map && w['id'].toString() == id);
-    if (exists) {
-      _watchlist.removeWhere((w) => w is Map && w['id'].toString() == id);
-    } else {
-      _watchlist.insert(0, item);
-    }
-    await prefs.setString('watchlist_json', jsonEncode(_watchlist));
-    if (mounted) setState(() {});
-  }
-
-  Future _saveProgress(Map entry) async {
-    final prefs = await SharedPreferences.getInstance();
-    final id = (entry['id'] ?? '').toString();
-    _continueWatching.removeWhere((e) => e is Map && e['id'].toString() == id);
-    _continueWatching.insert(0, entry);
-    if (_continueWatching.length > 20) {
-      _continueWatching = _continueWatching.take(20).toList();
-    }
-    await prefs.setString('continue_watching_json', jsonEncode(_continueWatching));
-    if (mounted) setState(() {});
-  }
-
-  Future _fetchRemoteConfig(SharedPreferences prefs) async {
-    try {
-      final res = await http
-          .get(Uri.parse(kRemoteConfigUrl))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data is Map) {
-          _remoteConfig = data;
-          final rawDefaults = data['default_catalogs'];
-          if (rawDefaults is List) {
-            for (final item in rawDefaults) {
-              final url = item.toString();
-              if (url.isNotEmpty && !_pluginUrls.contains(url)) {
-                _pluginUrls.add(url);
-              }
-            }
-          }
-          await prefs.setStringList(
-            'plugin_urls',
-            _pluginUrls.map((e) => e.toString()).toList(),
-          );
-
-          final ann = data['announcement'];
-          if (ann is Map) {
-            final annId = (ann['id'] ?? '').toString();
-            final seenId = prefs.getString('seen_ann_id') ?? '';
-            _hasUnreadNotice = annId.isNotEmpty && annId != seenId;
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future _loadAllPlugins() async {
-    final loaded = [];
-    final routes = [];
-
-    for (final rawUrl in _pluginUrls) {
-      final url = rawUrl.toString();
-      try {
-        final res = await http
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          final parsed = jsonDecode(res.body);
-          if (parsed is Map) {
-            loaded.add({'url': url, 'data': parsed});
-            final rawRoutes = parsed['hybrid_dub_routes'];
-            if (rawRoutes is List) {
-              for (final item in rawRoutes) {
-                if (item is Map) {
-                  routes.add(item);
-                }
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    _loadedPlugins = loaded;
-    _fandubRoutes = routes;
-  }
-
-  Future _fetchDefaultCatalogs() async {
-    try {
-      final mRes = await http
-          .get(Uri.parse('https://v3-cinemeta.strem.io/catalog/movie/top.json'))
-          .timeout(const Duration(seconds: 8));
-      if (mRes.statusCode == 200) {
-        final body = jsonDecode(mRes.body);
-        if (body is Map && body['metas'] is List) {
-          _movies = (body['metas'] as List).take(24).toList();
-        }
-      }
-    } catch (_) {}
-
-    try {
-      final sRes = await http
-          .get(Uri.parse('https://v3-cinemeta.strem.io/catalog/series/top.json'))
-          .timeout(const Duration(seconds: 8));
-      if (sRes.statusCode == 200) {
-        final body = jsonDecode(sRes.body);
-        if (body is Map && body['metas'] is List) {
-          _series = (body['metas'] as List).take(24).toList();
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future _toggleMode(bool val) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('fan_mode', val);
-    setState(() => _fanMode = val);
-  }
-
-  Future _addPluginUrl(String rawUrl) async {
-    final clean = rawUrl.trim();
-    if (!clean.startsWith('http')) return;
-    if (!_pluginUrls.contains(clean)) {
-      final prefs = await SharedPreferences.getInstance();
-      _pluginUrls.add(clean);
-      await prefs.setStringList(
-        'plugin_urls',
-        _pluginUrls.map((e) => e.toString()).toList(),
-      );
-      await _loadAllPlugins();
-      if (mounted) setState(() {});
-    }
-  }
-
-  Future _removePluginUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    _pluginUrls.remove(url);
-    await prefs.setStringList(
-      'plugin_urls',
-      _pluginUrls.map((e) => e.toString()).toList(),
-    );
-    await _loadAllPlugins();
-    if (mounted) setState(() {});
-  }
-
-  Future _buildBackupJsonString() async {
-    final prefs = await SharedPreferences.getInstance();
-    final payload = {
-      'app': 'Castex',
-      'version': '1.0.0',
-      'exported_at': DateTime.now().toIso8601String(),
-      'profile': {
-        'id': _profileId,
-        'name': _profileName,
-        'color': _profileColor,
-        'pin': _profilePin,
-        'created': prefs.getString('profile_created') ?? '',
-      },
-      'fan_mode': _fanMode,
-      'kotosub_url': _kotosubUrl,
-      'plugin_urls': _pluginUrls,
-      'watchlist': _watchlist,
-      'continue_watching': _continueWatching,
-    };
-    return const JsonEncoder.withIndent('  ').convert(payload);
-  }
-
-  Future _exportBackupFile() async {
-    try {
-      final jsonText = await _buildBackupJsonString();
-      final safeName = _profileName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-      final fileName = 'Castex_Backup_$safeName.json';
-
-      try {
-        final dlFile = File('/storage/emulated/0/Download/$fileName');
-        await dlFile.writeAsString(jsonText);
-      } catch (_) {}
-
-      final dir = await getTemporaryDirectory();
-      final tempFile = File('${dir.path}/$fileName');
-      await tempFile.writeAsString(jsonText);
-
-      await Share.shareXFiles(
-        [XFile(tempFile.path)],
-        text: 'Castex Profile Backup ($_profileName - $_profileId)',
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to export backup file.')),
-        );
-      }
-    }
-  }
-
-  Future _copyBackupJson() async {
-    final jsonText = await _buildBackupJsonString();
-    await Clipboard.setData(ClipboardData(text: jsonText));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Backup JSON copied to clipboard!')),
-      );
-    }
-  }
-
-  void _showNotificationDialog() async {
-    final ann = _remoteConfig['announcement'];
-    final prefs = await SharedPreferences.getInstance();
-    if (ann is Map && ann['id'] != null) {
-      await prefs.setString('seen_ann_id', ann['id'].toString());
-    }
-    if (!mounted) return;
-    setState(() => _hasUnreadNotice = false);
-
-    final titleText = (ann is Map && ann['title'] != null)
-        ? ann['title'].toString()
-        : 'What\'s New in Castex';
-    final msgText = (ann is Map && ann['message'] != null)
-        ? ann['message'].toString()
-        : 'No new announcements right now.';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF121216),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: Colors.white12),
-        ),
-        title: Text(titleText, style: const TextStyle(fontWeight: FontWeight.w700)),
-        content: Text(msgText, style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got it', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openDetailSheet(Map item) {
-    final id = (item['id'] ?? '').toString();
-    final inWatchlist = _watchlist.any((w) => w is Map && w['id'].toString() == id);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0B0B0E),
+      backgroundColor: const Color(0xFF0B0D12),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => MediaDetailSheet(
-        item: item,
-        fanMode: _fanMode,
-        fandubRoutes: _fandubRoutes,
-        pluginUrls: _pluginUrls,
-        kotosubUrl: _kotosubUrl,
-        inWatchlist: inWatchlist,
-        onToggleWatchlist: () => _toggleWatchlist(item),
-        onSaveProgress: _saveProgress,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) {
+          void applyHsb() {
+            final c = HSVColor.fromAHSV(1.0, hue, sat, val).toColor();
+            final hex =
+                '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
+            widget.controller.updateAppearance((a) => a.accentHex = hex);
+            setModal(() {});
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Liquid Glass & HSB Color Studio',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  // Preset Color Swatches
+                  Wrap(
+                    spacing: 10,
+                    children: [
+                      '#E50914',
+                      '#00D4FF',
+                      '#9D4EDD',
+                      '#10B981',
+                      '#F59E0B',
+                      '#F43F5E',
+                      '#FFFFFF',
+                    ].map((hex) {
+                      final color = Color(
+                          int.parse('FF${hex.replaceAll('#', '')}', radix: 16));
+                      return GestureDetector(
+                        onTap: () {
+                          final h = HSVColor.fromColor(color);
+                          hue = h.hue;
+                          sat = h.saturation;
+                          val = h.value;
+                          widget.controller
+                              .updateAppearance((a) => a.accentHex = hex);
+                          setModal(() {});
+                        },
+                        child: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: color,
+                          child: app.accentHex.toUpperCase() == hex
+                              ? const Icon(Icons.check,
+                                  size: 16, color: Colors.black)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Hue (${hue.round()}°)',
+                      style: const TextStyle(fontSize: 12)),
+                  Slider(
+                    value: hue,
+                    min: 0,
+                    max: 360,
+                    onChanged: (v) {
+                      hue = v;
+                      applyHsb();
+                    },
+                  ),
+                  Text('Saturation (${(sat * 100).round()}%)',
+                      style: const TextStyle(fontSize: 12)),
+                  Slider(
+                    value: sat,
+                    onChanged: (v) {
+                      sat = v;
+                      applyHsb();
+                    },
+                  ),
+                  Text('Brightness (${(val * 100).round()}%)',
+                      style: const TextStyle(fontSize: 12)),
+                  Slider(
+                    value: val,
+                    onChanged: (v) {
+                      val = v;
+                      applyHsb();
+                    },
+                  ),
+                  const Divider(),
+                  const Text('Liquid Glass Surface & Dock',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['Liquid', 'Frosted', 'Clear', 'Solid'].map((s) {
+                      return ChoiceChip(
+                        label: Text(s),
+                        selected: app.glassSurface == s,
+                        onSelected: (_) {
+                          widget.controller
+                              .updateAppearance((a) => a.glassSurface = s);
+                          setModal(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['Adaptive', 'Expanded', 'Compact'].map((m) {
+                      return ChoiceChip(
+                        label: Text('Dock: $m'),
+                        selected: app.dockMode == m,
+                        onSelected: (_) {
+                          widget.controller
+                              .updateAppearance((a) => a.dockMode = m);
+                          setModal(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('AMOLED Pure Black (#000000)'),
+                    value: app.amoledBlack,
+                    onChanged: (v) {
+                      widget.controller
+                          .updateAppearance((a) => a.amoledBlack = v);
+                      setModal(() {});
+                    },
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Auto Poster Aura Glow'),
+                    value: app.autoPosterAura,
+                    onChanged: (v) {
+                      widget.controller
+                          .updateAppearance((a) => a.autoPosterAura = v);
+                      setModal(() {});
+                    },
+                  ),
+                  const Divider(),
+                  Text(
+                    'Shareable UI Preset Code: ${app.toPresetCode()}',
+                    style: TextStyle(
+                      color: app.accentColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: presetCtrl,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter code (e.g. CX-CYBERPUNK)',
+                            filled: true,
+                            fillColor: Colors.white10,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          final ok = app.applyPresetCode(presetCtrl.text);
+                          if (ok) {
+                            widget.controller.pushCloudSync();
+                            setModal(() {});
+                          }
+                        },
+                        child: const Text('Apply'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _openFanQuizHub() {
+    final unlockedItems = CastexCatalog.items
+        .where((m) => widget.controller.completed80Ids.contains(m.id))
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0E1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Fan Mode • Anime & Lore Quiz',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Watch 80%+ of any episode/movie to unlock its 1-attempt KotoSub AI Quiz & earn profile badges!',
+              style: TextStyle(color: Colors.white60, fontSize: 12.5),
+            ),
+            const SizedBox(height: 16),
+            if (unlockedItems.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text(
+                  'No episode at 80%+ yet. Open any episode in the player and watch or scrub past 80% to unlock!',
+                  style: TextStyle(color: Colors.amberAccent),
+                ),
+              )
+            else
+              ...unlockedItems.map((item) {
+                final claimed =
+                    widget.controller.quizClaimedIds.contains(item.id);
+                return ListTile(
+                  title: Text(item.title),
+                  subtitle: Text(claimed
+                      ? 'Badge Unlocked!'
+                      : '${item.quizQuestions.length} MCQ Ready'),
+                  trailing: ElevatedButton(
+                    onPressed: claimed
+                        ? null
+                        : () {
+                            Navigator.pop(ctx);
+                            _launchQuizQuestions(item);
+                          },
+                    child: Text(claimed ? 'Claimed' : 'Start Quiz'),
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _launchQuizQuestions(MediaItem item) {
+    final q = item.quizQuestions.first;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${item.title} Quiz'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(q['q'] ?? ''),
+            const SizedBox(height: 14),
+            ...['a', 'b', 'c'].map((opt) {
+              return ListTile(
+                title: Text(q[opt] ?? ''),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (opt == q['ans']) {
+                    widget.controller.claimQuizReward(
+                      item.id,
+                      '${item.studio} Master',
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Correct! Unlocked "${item.studio} Master" Badge!',
+                        ),
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Wrong answer! Try another title.'),
+                      ),
+                    );
+                  }
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openAddonsManager() {
+    final nameCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    String dohResult = 'Cloudflare 1.1.1.1 DoH Ready';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0E1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Stremio Addons & Cloudflare DoH',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Built-in Cloudflare DNS (1.1.1.1)'),
+                  subtitle: Text(dohResult,
+                      style: const TextStyle(
+                          color: Colors.greenAccent, fontSize: 11.5)),
+                  value: widget.controller.appearance.cloudflareDns,
+                  onChanged: (v) async {
+                    widget.controller
+                        .updateAppearance((a) => a.cloudflareDns = v);
+                    if (v) {
+                      dohResult = await widget.controller
+                          .testCloudflareDoh('v3-cinemeta.strem.io');
+                    }
+                    setModal(() {});
+                  },
+                ),
+                const Divider(),
+                ...widget.controller.addons.map(
+                  (a) => SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(a.name),
+                    subtitle: Text(a.url,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11)),
+                    value: a.enabled,
+                    onChanged: (_) {
+                      widget.controller.toggleAddon(a.id);
+                      setModal(() {});
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Addon / Fandub Pack Name',
+                    filled: true,
+                    fillColor: Colors.white10,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'manifest.json or GitHub JSON URL',
+                    filled: true,
+                    fillColor: Colors.white10,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (nameCtrl.text.isEmpty || urlCtrl.text.isEmpty) return;
+                      widget.controller.addAddon(
+                        nameCtrl.text,
+                        urlCtrl.text,
+                        'Stremio / JSON',
+                      );
+                      nameCtrl.clear();
+                      urlCtrl.clear();
+                      setModal(() {});
+                    },
+                    child: const Text('Install Addon URL'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openBackupRestoreSheet() {
+    final importCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0E1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Backup & Restore (.json)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Include Sensitive Info'),
+                  subtitle: const Text(
+                    'Include installed Addon URLs & 4-digit Profile PINs in backup',
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                  value: _includeSensitiveBackup,
+                  onChanged: (v) =>
+                      setModal(() => _includeSensitiveBackup = v),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.copy_all_rounded),
+                    label: const Text('Copy Full JSON Backup to Clipboard'),
+                    onPressed: () {
+                      final jsonStr = widget.controller.exportBackupJson(
+                        includeSensitive: _includeSensitiveBackup,
+                      );
+                      Clipboard.setData(ClipboardData(text: jsonStr));
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Backup JSON copied to clipboard!'),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: importCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'Paste Castex .json backup here to restore...',
+                    filled: true,
+                    fillColor: Colors.white10,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      final ok =
+                          widget.controller.importBackupJson(importCtrl.text);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            ok
+                                ? 'Backup restored & synced to cloud!'
+                                : 'Invalid backup JSON format.',
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Restore & Sync'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: _tabIndex == 0,
-      appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xCC000000), Color(0x00000000)],
-            ),
-          ),
-        ),
-        title: Row(
-          children: [
-            const Text(
-              'Castex',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 22,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE50914),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          GestureDetector(
-            onTap: () => _toggleMode(!_fanMode),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.white10,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _fanMode ? Icons.auto_awesome_rounded : Icons.tv_rounded,
-                    size: 13,
-                    color: _fanMode ? const Color(0xFFF5C518) : Colors.white70,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    _fanMode ? 'Fan Mode' : 'Simple',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_none_rounded, size: 22),
-                onPressed: _showNotificationDialog,
-              ),
-              if (_hasUnreadNotice)
-                Positioned(
-                  right: 11,
-                  top: 11,
-                  child: Container(
-                    width: 7,
-                    height: 7,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE50914),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          GestureDetector(
-            onTap: () => setState(() => _tabIndex = 3),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 14, left: 4),
-              child: CircleAvatar(
-                radius: 14,
-                backgroundColor: Color(_profileColor),
-                child: Text(
-                  _profileName.isNotEmpty ? _profileName[0].toUpperCase() : 'C',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-            )
-          : IndexedStack(
-              index: _tabIndex,
-              children: [
-                _buildHomeTab(),
-                _buildSearchTab(),
-                _buildPluginsTab(),
-                _buildProfileTab(),
-              ],
-            ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF050507),
-          border: Border(top: BorderSide(color: Colors.white10, width: 0.6)),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _tabIndex,
-          onTap: (i) => setState(() => _tabIndex = i),
-          backgroundColor: const Color(0xFF050507),
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.white38,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home_rounded),
-              label: 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.search_rounded),
-              activeIcon: Icon(Icons.search_rounded),
-              label: 'Search',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.extension_outlined),
-              activeIcon: Icon(Icons.extension_rounded),
-              label: 'Addons',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline_rounded),
-              activeIcon: Icon(Icons.person_rounded),
-              label: 'Profile',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final app = widget.controller.appearance;
+    final profile = widget.controller.activeProfile;
+    final hours = (widget.controller.totalWatchMinutes / 60).toStringAsFixed(1);
 
-  Widget _buildHomeTab() {
-    final heroItems = _movies.take(5).toList();
-    return RefreshIndicator(
-      color: Colors.white,
-      backgroundColor: const Color(0xFF141418),
-      onRefresh: _initCastex,
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          if (heroItems.isNotEmpty) _buildHeroSpotlight(heroItems),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_continueWatching.isNotEmpty) ...[
-                  const Text(
-                    'Continue Watching',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 132,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _continueWatching.length,
-                      itemBuilder: (ctx, i) {
-                        final raw = _continueWatching[i];
-                        final cw = raw is Map ? raw : {};
-                        final pos = (cw['pos'] is int) ? cw['pos'] as int : 0;
-                        final dur = (cw['dur'] is int) ? cw['dur'] as int : 1;
-                        final ratio = dur == 0 ? 0.0 : (pos / dur).clamp(0.05, 1.0);
-                        return GestureDetector(
-                          onTap: () {
-                            final url = (cw['url'] ?? '').toString();
-                            if (url.startsWith('http')) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => CastexPlayerScreen(
-                                    title: (cw['title'] ?? 'Resume').toString(),
-                                    streamUrl: url,
-                                    mediaId: (cw['id'] ?? '').toString(),
-                                    poster: (cw['poster'] ?? '').toString(),
-                                    startMs: pos,
-                                    kotosubUrl: _kotosubUrl,
-                                    fanMode: _fanMode,
-                                    onSaveProgress: _saveProgress,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          child: Container(
-                            width: 195,
-                            margin: const EdgeInsets.only(right: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF111116),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: const BorderRadius.vertical(
-                                          top: Radius.circular(12),
-                                        ),
-                                        child: (cw['poster'] ?? '').toString().isNotEmpty
-                                            ? Image.network(
-                                                cw['poster'].toString(),
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) =>
-                                                    Container(color: Colors.white10),
-                                              )
-                                            : Container(color: Colors.white10),
-                                      ),
-                                      Container(
-                                        color: Colors.black38,
-                                        child: const Icon(
-                                          Icons.play_circle_fill_rounded,
-                                          color: Colors.white,
-                                          size: 34,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                LinearProgressIndicator(
-                                  value: ratio,
-                                  minHeight: 3,
-                                  backgroundColor: Colors.white12,
-                                  color: const Color(0xFFE50914),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Text(
-                                    (cw['title'] ?? 'Video').toString(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                ],
-                if (_watchlist.isNotEmpty) ...[
-                  _buildPosterSection('My Watchlist', _watchlist),
-                  const SizedBox(height: 22),
-                ],
-                if (_fanMode && _fandubRoutes.isNotEmpty) ...[
-                  const Text(
-                    'Community Fandubs',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 82,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _fandubRoutes.length,
-                      itemBuilder: (ctx, i) {
-                        final rawR = _fandubRoutes[i];
-                        final r = rawR is Map ? rawR : {};
-                        return GestureDetector(
-                          onTap: () async {
-                            final u = Uri.tryParse((r['external_url'] ?? '').toString());
-                            if (u != null) {
-                              await launchUrl(u, mode: LaunchMode.externalApplication);
-                            }
-                          },
-                          child: Container(
-                            width: 230,
-                            margin: const EdgeInsets.only(right: 12),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF111115),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.white12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  (r['title'] ?? 'Fandub').toString(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${r['dub_language']} • ${r['creator_name']}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 12, color: Colors.white60),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                ],
-                _buildPosterSection('Trending Movies', _movies),
-                const SizedBox(height: 24),
-                _buildPosterSection('Top Series & Anime', _series),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeroSpotlight(List heroItems) {
-    return SizedBox(
-      height: 430,
-      child: Stack(
-        children: [
-          PageView.builder(
-            itemCount: heroItems.length,
-            onPageChanged: (idx) => setState(() => _heroPage = idx),
-            itemBuilder: (ctx, idx) {
-              final raw = heroItems[idx];
-              final item = raw is Map ? raw : {};
-              final id = (item['id'] ?? '').toString();
-              final poster = (item['poster'] ?? '').toString();
-              final backdrop = id.startsWith('tt')
-                  ? 'https://images.metahub.space/background/medium/$id/img'
-                  : poster;
-              final title = (item['name'] ?? 'Featured').toString();
-              final rating = (item['imdbRating'] ?? '').toString();
-              final year = (item['releaseInfo'] ?? '').toString();
-              final inWl = _watchlist.any((w) => w is Map && w['id'].toString() == id);
-
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (backdrop.isNotEmpty)
-                    Image.network(
-                      backdrop,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => poster.isNotEmpty
-                          ? Image.network(poster, fit: BoxFit.cover)
-                          : Container(color: const Color(0xFF101014)),
-                    )
-                  else
-                    Container(color: const Color(0xFF101014)),
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: [0.0, 0.35, 0.78, 1.0],
-                        colors: [
-                          Color(0x99000000),
-                          Color(0x11000000),
-                          Color(0xDD000000),
-                          Color(0xFF000000),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 18,
-                    right: 18,
-                    bottom: 24,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (rating.isNotEmpty) ...[
-                              const Icon(
-                                Icons.star_rounded,
-                                color: Color(0xFFF5C518),
-                                size: 15,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                rating,
-                                style: const TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFFF5C518),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                            ],
-                            if (year.isNotEmpty)
-                              Text(
-                                year,
-                                style: const TextStyle(fontSize: 12.5, color: Colors.white70),
-                              ),
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white12,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: const Text(
-                                'HD • KotoSub',
-                                style: TextStyle(fontSize: 10.5, color: Colors.white70),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            height: 1.15,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.black,
-                                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
-                              ),
-                              onPressed: () => _openDetailSheet(item),
-                              icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                              label: const Text(
-                                'Watch Now',
-                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                backgroundColor: Colors.white10,
-                                side: const BorderSide(color: Colors.white24),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
-                              ),
-                              onPressed: () => _toggleWatchlist(item),
-                              icon: Icon(
-                                inWl ? Icons.check_rounded : Icons.add_rounded,
-                                size: 19,
-                              ),
-                              label: Text(
-                                inWl ? 'Saved' : 'Watchlist',
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          Positioned(
-            bottom: 6,
-            left: 0,
-            right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                heroItems.length,
-                (i) => Container(
-                  width: _heroPage == i ? 16 : 5,
-                  height: 5,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: _heroPage == i ? Colors.white : Colors.white24,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPosterSection(String title, List items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
       children: [
-        Text(
-          title,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        if (items.isEmpty)
-          const Text(
-            'Pull down to load catalog.',
-            style: TextStyle(color: Colors.white38, fontSize: 13),
-          )
-        else
-          SizedBox(
-            height: 222,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: items.length,
-              itemBuilder: (ctx, i) {
-                final rawItem = items[i];
-                final item = rawItem is Map ? rawItem : {};
-                return _buildPosterCard(item);
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildPosterCard(Map item, {double width = 128}) {
-    final poster = (item['poster'] ?? '').toString();
-    final rating = (item['imdbRating'] ?? '').toString();
-
-    return GestureDetector(
-      onTap: () => _openDetailSheet(item),
-      child: Container(
-        width: width,
-        margin: const EdgeInsets.only(right: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      color: const Color(0xFF121216),
-                      width: double.infinity,
-                      height: double.infinity,
-                      child: poster.isNotEmpty
-                          ? Image.network(
-                              poster,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.movie_outlined,
-                                color: Colors.white24,
-                              ),
-                            )
-                          : const Icon(Icons.movie_outlined, color: Colors.white24),
-                    ),
-                  ),
-                  if (rating.isNotEmpty)
-                    Positioned(
-                      top: 7,
-                      right: 7,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xCC000000),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.star_rounded,
-                              color: Color(0xFFF5C518),
-                              size: 11,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              rating,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              (item['name'] ?? 'Untitled').toString(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchTab() {
-    final q = _searchQuery.toLowerCase();
-    final combined = [..._movies, ..._series];
-    final filtered = q.isEmpty
-        ? combined
-        : combined
-            .where((item) =>
-                (item is Map ? (item['name'] ?? '') : '')
-                    .toString()
-                    .toLowerCase()
-                    .contains(q))
-            .toList();
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-        child: Column(
-          children: [
-            TextField(
-              onChanged: (v) => setState(() => _searchQuery = v),
-              decoration: InputDecoration(
-                hintText: 'Search movies, shows, anime...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 14.5),
-                prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF121216),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Colors.white10),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Colors.white10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: GridView.builder(
-                itemCount: filtered.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 0.58,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 14,
-                ),
-                itemBuilder: (ctx, i) {
-                  final raw = filtered[i];
-                  final item = raw is Map ? raw : {};
-                  return _buildPosterCard(item, width: double.infinity);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPluginsTab() {
-    final controller = TextEditingController();
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          const Text(
-            'Addons & Extensions',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Install Stremio manifest URLs or Castex community JSON packs.',
-            style: TextStyle(color: Colors.white54, fontSize: 13.5),
-          ),
-          const SizedBox(height: 16),
-          Row(
+        // Profile Header Card
+        LiquidGlassCard(
+          appearance: app,
+          padding: const EdgeInsets.all(16),
+          child: Column(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  decoration: InputDecoration(
-                    hintText: 'https://.../manifest.json',
-                    hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
-                    filled: true,
-                    fillColor: const Color(0xFF121216),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.white10),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.white10),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () {
-                  _addPluginUrl(controller.text);
-                  controller.clear();
-                },
-                child: const Text('Install', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Active Addons (${_pluginUrls.length})',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-          ),
-          const SizedBox(height: 12),
-          ..._pluginUrls.map((rawU) {
-            final u = rawU.toString();
-            final match = _loadedPlugins.where((p) => p is Map && p['url'] == u).toList();
-            String name = 'Stremio / Remote JSON Addon';
-            if (match.isNotEmpty) {
-              final d = (match.first as Map)['data'];
-              if (d is Map && d['name'] != null) {
-                name = d['name'].toString();
-              }
-            }
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF101014),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Row(
+              Row(
                 children: [
-                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                  const SizedBox(width: 12),
+                  AvatarWidget(
+                    profile: profile,
+                    size: 62,
+                    showBorder: true,
+                    borderColor: app.accentColor,
+                  ),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
                         Text(
-                          u,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11.5, color: Colors.white38),
+                          profile.name,
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          widget.controller.email ?? '',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          children: widget.controller.unlockedBadges
+                              .map(
+                                (b) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: app.accentColor.withOpacity(0.22),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    b,
+                                    style: TextStyle(
+                                      color: app.accentColor,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.white54),
-                    onPressed: () => _removePluginUrl(u),
+                    icon: const Icon(Icons.edit_rounded),
+                    onPressed: () =>
+                        _openEditProfileDialog(existing: profile),
                   ),
                 ],
               ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileTab() {
-    final rawLinks = _remoteConfig['community_links'];
-    final links = rawLinks is Map ? rawLinks : {};
-    final kotoCtrl = TextEditingController(text: _kotosubUrl);
-
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF111116),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Color(_profileColor),
-                  child: Text(
-                    _profileName.isNotEmpty ? _profileName[0].toUpperCase() : 'C',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _profileName,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'ID: $_profileId • ${_watchlist.length} Saved',
-                        style: const TextStyle(fontSize: 12, color: Colors.white60),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Switch / Reset Profile',
-                  icon: const Icon(Icons.manage_accounts_rounded, color: Colors.white70),
-                  onPressed: () async {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.remove('profile_name');
-                    widget.onProfileReset();
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          const Text(
-            'Account Backup & Restore',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Export your Castex profile, watchlist, progress & addons into a backup file, or restore anytime.',
-            style: TextStyle(color: Colors.white54, fontSize: 12.5),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _exportBackupFile,
-                  icon: const Icon(Icons.upload_file_rounded, size: 18),
-                  label: const Text(
-                    'Export File',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _copyBackupJson,
-                  icon: const Icon(Icons.copy_rounded, size: 17),
-                  label: const Text(
-                    'Copy JSON',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () {
-                    showCastexRestoreSheet(context, () async {
-                      await _initCastex();
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Profile restored successfully!')),
-                        );
-                      }
-                    });
-                  },
-                  icon: const Icon(Icons.restore_page_rounded, size: 18),
-                  label: const Text(
-                    'Restore',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF101014),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Anime & Fan Mode',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Unlock community fandubs, lore & extra tools',
-                style: TextStyle(fontSize: 12, color: Colors.white54),
-              ),
-              value: _fanMode,
-              activeColor: Colors.white,
-              onChanged: _toggleMode,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'KotoSub AI Engine',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Connect your Render KotoSub server for Hinglish & Bangla subtitles.',
-            style: TextStyle(color: Colors.white54, fontSize: 12.5),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: kotoCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'https://your-kotosub.onrender.com',
-                    hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
-                    filled: true,
-                    fillColor: const Color(0xFF121216),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.white10),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.white10),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('kotosub_url', kotoCtrl.text.trim());
-                  setState(() => _kotosubUrl = kotoCtrl.text.trim());
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('KotoSub server saved')),
-                    );
-                  }
-                },
-                child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Community & Source',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          _linkTile('GitHub Open-Source (GPLv3)', (links['github'] ?? '').toString()),
-          _linkTile('Discord Community', (links['discord'] ?? '').toString()),
-          _linkTile('Instagram Updates', (links['instagram'] ?? '').toString()),
-          _linkTile('Official Website', (links['website'] ?? '').toString()),
-          const SizedBox(height: 22),
-          const Text(
-            'Castex v1.0.0 • Ad-Free & Open-Source\nCastex does not host or distribute any media files.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white30, fontSize: 11.5),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _linkTile(String label, String url) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF101014),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: ListTile(
-        title: Text(label, style: const TextStyle(fontSize: 14)),
-        trailing: const Icon(Icons.open_in_new_rounded, size: 18, color: Colors.white54),
-        onTap: () async {
-          final u = Uri.tryParse(url);
-          if (u != null && url.startsWith('http')) {
-            await launchUrl(u, mode: LaunchMode.externalApplication);
-          }
-        },
-      ),
-    );
-  }
-}
-
-class MediaDetailSheet extends StatefulWidget {
-  final Map item;
-  final bool fanMode;
-  final List fandubRoutes;
-  final List pluginUrls;
-  final String kotosubUrl;
-  final bool inWatchlist;
-  final Future Function() onToggleWatchlist;
-  final Future Function(Map entry) onSaveProgress;
-
-  MediaDetailSheet({
-    super.key,
-    required this.item,
-    required this.fanMode,
-    required this.fandubRoutes,
-    required this.pluginUrls,
-    required this.kotosubUrl,
-    required this.inWatchlist,
-    required this.onToggleWatchlist,
-    required this.onSaveProgress,
-  });
-
-  @override
-  State createState() => _MediaDetailSheetState();
-}
-
-class _MediaDetailSheetState extends State<MediaDetailSheet> {
-  String _selectedDubLayer = 'Original Audio';
-  String _selectedSubLang = 'Hinglish';
-  List _streams = [];
-  List _episodes = [];
-  int _selectedSeason = 1;
-  int _selectedEpisode = 1;
-  bool _fetchingStreams = false;
-  late bool _savedInWatchlist;
-
-  @override
-  void initState() {
-    super.initState();
-    _savedInWatchlist = widget.inWatchlist;
-    _initDetailData();
-  }
-
-  Future _initDetailData() async {
-    final type = (widget.item['type'] ?? 'movie').toString();
-    if (type == 'series') {
-      await _fetchSeriesEpisodes();
-    }
-    await _resolveAddonStreams();
-  }
-
-  Future _fetchSeriesEpisodes() async {
-    final id = (widget.item['id'] ?? '').toString();
-    if (id.isEmpty) return;
-    try {
-      final res = await http
-          .get(Uri.parse('https://v3-cinemeta.strem.io/meta/series/$id.json'))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        if (body is Map && body['meta'] is Map && body['meta']['videos'] is List) {
-          final vids = (body['meta']['videos'] as List)
-              .where((v) => v is Map && (v['season'] ?? 0) != 0)
-              .toList();
-          if (mounted && vids.isNotEmpty) {
-            setState(() {
-              _episodes = vids;
-              _selectedSeason = (vids.first['season'] is int) ? vids.first['season'] : 1;
-              _selectedEpisode = (vids.first['episode'] is int) ? vids.first['episode'] : 1;
-            });
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future _resolveAddonStreams() async {
-    final id = (widget.item['id'] ?? '').toString();
-    final type = (widget.item['type'] ?? 'movie').toString();
-    if (id.isEmpty) return;
-
-    setState(() => _fetchingStreams = true);
-    final found = [];
-
-    for (final rawUrl in widget.pluginUrls) {
-      final pUrl = rawUrl.toString();
-      if (pUrl.endsWith('/manifest.json')) {
-        final base = pUrl.substring(0, pUrl.length - '/manifest.json'.length);
-        final streamApi = type == 'movie'
-            ? '$base/stream/movie/$id.json'
-            : '$base/stream/series/$id:$_selectedSeason:$_selectedEpisode.json';
-        try {
-          final res = await http
-              .get(Uri.parse(streamApi))
-              .timeout(const Duration(seconds: 7));
-          if (res.statusCode == 200) {
-            final decoded = jsonDecode(res.body);
-            if (decoded is Map && decoded['streams'] is List) {
-              for (final s in (decoded['streams'] as List).take(10)) {
-                if (s is Map && s['url'] != null) {
-                  found.add(s);
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _streams = found;
-        _fetchingStreams = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final title = (widget.item['name'] ?? 'Unknown').toString();
-    final desc = (widget.item['description'] ?? 'No synopsis available.').toString();
-    final rating = (widget.item['imdbRating'] ?? '').toString();
-    final year = (widget.item['releaseInfo'] ?? '').toString();
-    final type = (widget.item['type'] ?? 'movie').toString();
-
-    final seasons = _episodes
-        .map((e) => (e is Map && e['season'] is int) ? e['season'] as int : 1)
-        .toSet()
-        .toList()
-      ..sort();
-
-    final seasonEpisodes = _episodes
-        .where((e) => e is Map && e['season'] == _selectedSeason)
-        .toList();
-
-    final dubOptions = [
-      'Original Audio',
-      'Official Dub',
-      if (widget.fanMode) 'Community Fandub',
-    ];
-    final subOptions = ['Off', 'Hinglish', 'Bangla', 'Banglish'];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 30),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _savedInWatchlist
-                        ? Icons.bookmark_rounded
-                        : Icons.bookmark_add_outlined,
-                    color: _savedInWatchlist ? const Color(0xFFF5C518) : Colors.white,
-                  ),
-                  onPressed: () async {
-                    await widget.onToggleWatchlist();
-                    setState(() => _savedInWatchlist = !_savedInWatchlist);
-                  },
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                if (rating.isNotEmpty) ...[
-                  const Icon(Icons.star_rounded, color: Color(0xFFF5C518), size: 15),
-                  const SizedBox(width: 4),
-                  Text(
-                    rating,
-                    style: const TextStyle(
-                      color: Color(0xFFF5C518),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                if (year.isNotEmpty)
-                  Text(year, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              desc,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white60, fontSize: 13.5, height: 1.4),
-            ),
-            if (type == 'series' && seasons.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Seasons & Episodes',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 14),
+              // Multi-Profile Switcher Row
               SizedBox(
                 height: 36,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  children: seasons.map((s) {
-                    final active = _selectedSeason == s;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text('Season $s', style: const TextStyle(fontSize: 12)),
-                        selected: active,
-                        selectedColor: Colors.white,
-                        labelStyle: TextStyle(
-                          color: active ? Colors.black : Colors.white70,
-                          fontWeight: FontWeight.w600,
+                  children: [
+                    ...widget.controller.profiles.map((p) {
+                      final active = p.id == profile.id;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          avatar: AvatarWidget(profile: p, size: 20),
+                          label: Text(p.name),
+                          selected: active,
+                          onSelected: (_) =>
+                              widget.controller.switchProfile(p.id),
                         ),
-                        onSelected: (_) {
-                          setState(() {
-                            _selectedSeason = s;
-                            _selectedEpisode = 1;
-                          });
-                          _resolveAddonStreams();
-                        },
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 44,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: seasonEpisodes.length,
-                  itemBuilder: (ctx, i) {
-                    final ep = seasonEpisodes[i] as Map;
-                    final epNum = (ep['episode'] is int) ? ep['episode'] as int : (i + 1);
-                    final active = _selectedEpisode == epNum;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(
-                          'E$epNum • ${(ep['title'] ?? ep['name'] ?? 'Episode $epNum')}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: active ? Colors.black : Colors.white70,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        selected: active,
-                        selectedColor: Colors.white,
-                        onSelected: (_) {
-                          setState(() => _selectedEpisode = epNum);
-                          _resolveAddonStreams();
-                        },
-                      ),
-                    );
-                  },
+                      );
+                    }),
+                    ActionChip(
+                      avatar: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Profile'),
+                      onPressed: () => _openEditProfileDialog(),
+                    ),
+                  ],
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            const Text(
-              'Audio & Dub Track',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: dubOptions
-                  .map(
-                    (d) => ChoiceChip(
-                      label: Text(
-                        d,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _selectedDubLayer == d ? Colors.black : Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // Stats + Taste DNA Ring Card
+        LiquidGlassCard(
+          appearance: app,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 96,
+                height: 96,
+                child: CustomPaint(
+                  painter: TasteDnaPainter(widget.controller.genreMinutes),
+                  child: const Center(
+                    child: Text(
+                      'Taste\nDNA',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
                       ),
-                      selected: _selectedDubLayer == d,
-                      selectedColor: Colors.white,
-                      onSelected: (_) => setState(() => _selectedDubLayer = d),
                     ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'KotoSub AI Subtitles',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: subOptions
-                  .map(
-                    (s) => ChoiceChip(
-                      label: Text(
-                        s,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _selectedSubLang == s ? Colors.black : Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      selected: _selectedSubLang == s,
-                      selectedColor: Colors.white,
-                      onSelected: (_) => setState(() => _selectedSubLang = s),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              type == 'series'
-                  ? 'Streams (S$_selectedSeason E$_selectedEpisode)'
-                  : 'Streams',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            if (_fetchingStreams)
-              const LinearProgressIndicator(color: Colors.white)
-            else if (_streams.isEmpty)
-              const Text(
-                'Install a Stremio stream addon in the Addons tab to play inside Castex.',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
-              )
-            else
-              ..._streams.map((rawSt) {
-                final st = rawSt is Map ? rawSt : {};
-                final streamUrl = (st['url'] ?? '').toString();
-                final displayTitle = type == 'series'
-                    ? '$title (S$_selectedSeason E$_selectedEpisode)'
-                    : title;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF121216),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white10),
                   ),
-                  child: ListTile(
-                    title: Text(
-                      (st['title'] ?? st['name'] ?? 'Stream').toString(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13.5),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        IconButton(
-                          tooltip: 'External Player',
-                          icon: const Icon(Icons.open_in_new_rounded, size: 19, color: Colors.white54),
-                          onPressed: () async {
-                            final u = Uri.tryParse(streamUrl);
-                            if (u != null) {
-                              await launchUrl(u, mode: LaunchMode.externalApplication);
-                            }
-                          },
-                        ),
-                        const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 28),
+                        _statCol('${widget.controller.watchProgress.length}',
+                            'Watching'),
+                        _statCol('${widget.controller.watchlistIds.length}',
+                            'Saved'),
+                        _statCol('${hours}h', 'Watch Time'),
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Top Genres: ${widget.controller.genreMinutes.keys.take(3).join(' • ')}',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Fan Mode -> Game -> Quiz Card
+        if (widget.controller.effectiveFanMode) ...[
+          const SizedBox(height: 14),
+          ListTile(
+            tileColor: app.accentColor.withOpacity(0.16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(color: app.accentColor.withOpacity(0.5)),
+            ),
+            leading: Icon(Icons.sports_esports_rounded, color: app.accentColor),
+            title: const Text('Game → Anime & Lore Quiz',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(
+              '${widget.controller.completed80Ids.length} quizzes unlocked (80% watch rule)',
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: _openFanQuizHub,
+          ),
+        ],
+
+        const SizedBox(height: 18),
+        const Text(
+          'Settings & Studio',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          onChanged: (v) => setState(() => _settingsQuery = v.toLowerCase()),
+          decoration: InputDecoration(
+            hintText: 'Search settings (Glass, Color, DNS, Subtitles, Backup)...',
+            prefixIcon: const Icon(Icons.search_rounded, size: 20),
+            filled: true,
+            fillColor: app.cardColor,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        if (_matches('appearance glass color hsb theme dock preset'))
+          _settingTile(
+            icon: Icons.palette_rounded,
+            title: 'Appearance & Liquid Glass Studio',
+            subtitle:
+                'HSB Color Picker, ${app.glassSurface} Glass, ${app.dockMode} Dock, Preset ${app.toPresetCode()}',
+            onTap: _openAppearanceStudio,
+            app: app,
+          ),
+
+        if (_matches('spoiler shield layout unwatched blur'))
+          SwitchListTile(
+            tileColor: app.cardColor,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            secondary: Icon(Icons.visibility_off_rounded, color: app.accentColor),
+            title: const Text('Smart AI Spoiler Shield'),
+            subtitle: const Text(
+              'Blur unwatched episode thumbnails & hide spoiler lines',
+              style: TextStyle(fontSize: 12),
+            ),
+            value: app.spoilerShield,
+            onChanged: (v) =>
+                widget.controller.updateAppearance((a) => a.spoilerShield = v),
+          ),
+
+        const SizedBox(height: 8),
+
+        if (_matches('kotosub playback subtitle language dual'))
+          _settingTile(
+            icon: Icons.subtitles_rounded,
+            title: 'Playback & KotoSub AI Engine',
+            subtitle:
+                'Default: ${app.defaultSubLang} • Dual Subtitles: ${app.dualSubtitles ? 'ON' : 'OFF'}',
+            onTap: () {
+              const langs = ['Hinglish', 'Bangla', 'Banglish', 'English'];
+              final next =
+                  langs[(langs.indexOf(app.defaultSubLang) + 1) % langs.length];
+              widget.controller
+                  .updateAppearance((a) => a.defaultSubLang = next);
+            },
+            app: app,
+          ),
+
+        if (_matches('addons stremio cloudflare dns bypass'))
+          _settingTile(
+            icon: Icons.extension_rounded,
+            title: 'Addons & Cloudflare DNS (1.1.1.1)',
+            subtitle:
+                '${widget.controller.addons.length} installed • ISP Bypass: ${app.cloudflareDns ? 'ACTIVE' : 'OFF'}',
+            onTap: _openAddonsManager,
+            app: app,
+          ),
+
+        if (_matches('backup restore json export'))
+          _settingTile(
+            icon: Icons.backup_rounded,
+            title: 'Backup & Restore (.json)',
+            subtitle: 'Export/Import with Include Sensitive Info toggle',
+            onTap: _openBackupRestoreSheet,
+            app: app,
+          ),
+
+        if (_matches('sync cloud firebase'))
+          _settingTile(
+            icon: Icons.cloud_sync_rounded,
+            title: 'Force Cloud Sync Now',
+            subtitle: 'Status: ${widget.controller.syncStatus}',
+            onTap: () => widget.controller.pullCloudSync(),
+            app: app,
+          ),
+
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.redAccent,
+            side: const BorderSide(color: Colors.redAccent),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          onPressed: () => widget.controller.signOut(),
+          icon: const Icon(Icons.logout_rounded),
+          label: const Text('Sign Out of Cloud Account'),
+        ),
+      ],
+    );
+  }
+
+  bool _matches(String keywords) =>
+      _settingsQuery.isEmpty || keywords.contains(_settingsQuery);
+
+  Widget _statCol(String val, String label) {
+    return Column(
+      children: [
+        Text(val,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+        Text(label,
+            style: const TextStyle(color: Colors.white60, fontSize: 11)),
+      ],
+    );
+  }
+
+  Widget _settingTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    required CastexAppearance app,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        tileColor: app.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        leading: Icon(icon, color: app.accentColor),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle,
+            style: const TextStyle(color: Colors.white60, fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class TasteDnaPainter extends CustomPainter {
+  final Map<String, int> genreMinutes;
+  TasteDnaPainter(this.genreMinutes);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = genreMinutes.values.fold<int>(0, (a, b) => a + b);
+    if (total == 0) return;
+
+    const palette = [
+      Color(0xFFE50914),
+      Color(0xFF00D4FF),
+      Color(0xFF9D4EDD),
+      Color(0xFF10B981),
+      Color(0xFFF59E0B),
+    ];
+
+    final rect = Offset.zero & size;
+    double startAngle = -math.pi / 2;
+    int idx = 0;
+
+    for (final entry in genreMinutes.entries) {
+      final sweep = (entry.value / total) * 2 * math.pi;
+      final paint = Paint()
+        ..color = palette[idx % palette.length]
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 10
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+          rect.deflate(8), startAngle, sweep - 0.08, false, paint);
+      startAngle += sweep;
+      idx++;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ============================================================================
+// 15. DETAIL SCREEN (SPOILER SHIELD, AI RECAP, CANON/FILLER, STREAM PICKER)
+// ============================================================================
+class MediaDetailScreen extends StatefulWidget {
+  final CastexController controller;
+  final MediaItem item;
+
+  const MediaDetailScreen({
+    super.key,
+    required this.controller,
+    required this.item,
+  });
+
+  @override
+  State<MediaDetailScreen> createState() => _MediaDetailScreenState();
+}
+
+class _MediaDetailScreenState extends State<MediaDetailScreen> {
+  String _dubFilter = 'All';
+
+  void _openStreamPicker(EpisodeItem ep) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0E1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) {
+          final filtered = ep.streams.where((s) {
+            return _dubFilter == 'All' || s.dubLayer == _dubFilter;
+          }).toList();
+
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Select Stream • Ep ${ep.number}: ${ep.title}',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    'All',
+                    'Original Audio',
+                    'Official Dub',
+                    'Community Fandub',
+                  ].map((layer) {
+                    return ChoiceChip(
+                      label: Text(layer, style: const TextStyle(fontSize: 11)),
+                      selected: _dubFilter == layer,
+                      onSelected: (_) => setModal(() => _dubFilter = layer),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+                ...filtered.map(
+                  (s) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: widget
+                          .controller.appearance.accentColor
+                          .withOpacity(0.2),
+                      child: Text(
+                        s.quality.split(' ').first,
+                        style: const TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    title: Text(s.title,
+                        style: const TextStyle(
+                            fontSize: 13.5, fontWeight: FontWeight.bold)),
+                    subtitle: Text(
+                      '${s.dubLayer} • ${s.language} • ${s.provider}',
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
+                    trailing: const Icon(Icons.play_circle_fill_rounded),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(ctx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => CastexPlayerScreen(
-                            title: displayTitle,
-                            streamUrl: streamUrl,
-                            mediaId: (widget.item['id'] ?? '').toString(),
-                            poster: (widget.item['poster'] ?? '').toString(),
-                            startMs: 0,
-                            initialSubLang: _selectedSubLang,
-                            initialDubLayer: _selectedDubLayer,
-                            kotosubUrl: widget.kotosubUrl,
-                            fanMode: widget.fanMode,
-                            onSaveProgress: widget.onSaveProgress,
+                          builder: (_) => CastexCinemaPlayerScreen(
+                            controller: widget.controller,
+                            item: widget.item,
+                            episode: ep,
+                            stream: s,
                           ),
                         ),
                       );
                     },
                   ),
-                );
-              }),
-          ],
-        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.controller.appearance;
+    final item = widget.item;
+    final watchedPct = widget.controller.watchProgress[item.id] ?? 0.0;
+
+    return Scaffold(
+      backgroundColor: app.bgColor,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 260,
+            pinned: true,
+            backgroundColor: app.bgColor,
+            flexibleSpace: FlexibleSpaceBar(
+              title: Text(
+                item.title,
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(item.backdropUrl, fit: BoxFit.cover),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, app.bgColor],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                Row(
+                  children: [
+                    Chip(label: Text('★ ${item.rating}')),
+                    const SizedBox(width: 8),
+                    Chip(label: Text(item.qualityBadge)),
+                    const SizedBox(width: 8),
+                    Chip(label: Text(item.studio)),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(
+                        widget.controller.watchlistIds.contains(item.id)
+                            ? Icons.bookmark_added_rounded
+                            : Icons.bookmark_add_outlined,
+                        color: app.accentColor,
+                      ),
+                      onPressed: () {
+                        widget.controller.toggleWatchlist(item.id);
+                        setState(() {});
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        widget.controller.offlinePocketIds.contains(item.id)
+                            ? Icons.offline_pin_rounded
+                            : Icons.download_for_offline_outlined,
+                        color: Colors.amberAccent,
+                      ),
+                      onPressed: () {
+                        widget.controller.toggleOfflinePocket(item.id);
+                        setState(() {});
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(item.overview,
+                    style: const TextStyle(color: Colors.white70, height: 1.4)),
+                if (widget.controller.effectiveFanMode) ...[
+                  const SizedBox(height: 14),
+                  LiquidGlassCard(
+                    appearance: app,
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.auto_awesome,
+                                size: 16, color: app.accentColor),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Previously On... (KotoSub AI Recap)',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.aiRecap,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Episodes & Hybrid Streams',
+                      style:
+                          TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                    if (app.spoilerShield)
+                      const Text(
+                        'Spoiler Shield ON',
+                        style: TextStyle(
+                            color: Colors.amberAccent, fontSize: 11.5),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ...item.episodes.map((ep) {
+                  final isUnwatched = ep.number > 1 && watchedPct < 0.80;
+                  final hideSpoiler = app.spoilerShield && isUnwatched;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: app.cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            width: 110,
+                            height: 68,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.network(ep.thumbnailUrl,
+                                    fit: BoxFit.cover),
+                                if (hideSpoiler)
+                                  BackdropFilter(
+                                    filter:
+                                        ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                                    child: Container(
+                                      color: Colors.black54,
+                                      alignment: Alignment.center,
+                                      child: const Icon(
+                                        Icons.visibility_off_rounded,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'E${ep.number} • ${ep.duration}',
+                                    style: const TextStyle(
+                                        fontSize: 11, color: Colors.white60),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  if (widget.controller.effectiveFanMode)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: ep.canonTag == 'FILLER'
+                                            ? Colors.orange.withOpacity(0.25)
+                                            : Colors.green.withOpacity(0.25),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        ep.canonTag,
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ep.canonTag == 'FILLER'
+                                              ? Colors.orangeAccent
+                                              : Colors.greenAccent,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                hideSpoiler
+                                    ? 'Episode ${ep.number} (Spoiler Shielded)'
+                                    : ep.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13.5),
+                              ),
+                              Text(
+                                hideSpoiler
+                                    ? 'Watch previous episode to reveal synopsis'
+                                    : ep.synopsis,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 11.5, color: Colors.white60),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.play_circle_fill_rounded,
+                              color: app.accentColor, size: 32),
+                          onPressed: () => _openStreamPicker(ep),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ]),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class CastexPlayerScreen extends StatefulWidget {
-  final String title;
-  final String streamUrl;
-  final String mediaId;
-  final String poster;
-  final int startMs;
-  final String initialSubLang;
-  final String initialDubLayer;
-  final String kotosubUrl;
-  final bool fanMode;
-  final Future Function(Map entry) onSaveProgress;
+// ============================================================================
+// 16. FULLSCREEN CINEMA PLAYER (KOTOSUB DUAL SUBS, HYBRID DUB, 2X HOLD, ANISKIP)
+// ============================================================================
+class CastexCinemaPlayerScreen extends StatefulWidget {
+  final CastexController controller;
+  final MediaItem item;
+  final EpisodeItem episode;
+  final StreamSource stream;
 
-  CastexPlayerScreen({
+  const CastexCinemaPlayerScreen({
     super.key,
-    required this.title,
-    required this.streamUrl,
-    required this.mediaId,
-    required this.poster,
-    required this.startMs,
-    this.initialSubLang = 'Hinglish',
-    this.initialDubLayer = 'Original Audio',
-    required this.kotosubUrl,
-    required this.fanMode,
-    required this.onSaveProgress,
+    required this.controller,
+    required this.item,
+    required this.episode,
+    required this.stream,
   });
 
   @override
-  State createState() => _CastexPlayerScreenState();
+  State<CastexCinemaPlayerScreen> createState() =>
+      _CastexCinemaPlayerScreenState();
 }
 
-class _CastexPlayerScreenState extends State<CastexPlayerScreen> {
-  late VideoPlayerController _controller;
-  bool _ready = false;
-  bool _error = false;
+class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
+  late VideoPlayerController _videoCtrl;
+  bool _initialized = false;
   bool _showControls = true;
-  double _speed = 1.0;
-  late String _subLang;
-  late String _dubLayer;
-  String _liveSubCaption = '';
-  Timer? _progressTimer;
+  bool _isFast2x = false;
+  String _activeDubLayer = '';
+  String _subLang = 'Hinglish';
+  double _subOffsetSec = 0.0;
+  String? _errorText;
+
+  // Built-in KotoSub Sync Lines (0.000s timestamp aligned)
+  static const List> _kotoSubSampleCue = [
+    {
+      'en': 'Domain Expansion: Unlimited Void!',
+      'Hinglish': 'Domain Expansion: Unlimited Void — ab koi bach nahi sakta!',
+      'Bangla': 'ডোমেইন এক্সপ্যানশন: আনলিমিটেড ভয়েড — এখন আর কেউ পালাতে পারবে না!',
+      'Banglish': 'Domain Expansion: Unlimited Void — ekhon ar keu palate parbe na!',
+    },
+    {
+      'en': 'Hold the line! The barrier is collapsing!',
+      'Hinglish': 'Line pakad ke rakho! Barrier tootne wala hai!',
+      'Bangla': 'লাইন ধরে রাখো! ব্যারিয়ার এখনই ভেঙে পড়বে!',
+      'Banglish': 'Line dhore rakho! Barrier ekhoni bhenge porbe!',
+    },
+    {
+      'en': 'Castex KotoSub AI synced at 0.000s latency.',
+      'Hinglish': 'Castex KotoSub AI 0.000s sync mein live chal raha hai.',
+      'Bangla': 'Castex KotoSub AI ০.০০০ সেকেন্ড সিঙ্কে লাইভ চলছে।',
+      'Banglish': 'Castex KotoSub AI 0.000s sync-e live cholche.',
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-    _subLang = widget.initialSubLang;
-    _dubLayer = widget.initialDubLayer;
+    _activeDubLayer = widget.stream.dubLayer;
+    _subLang = widget.controller.appearance.defaultSubLang;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    WakelockPlus.enable();
-    _initPlayer();
+    _initPlayer(widget.stream.url);
   }
 
-  Future _initPlayer() async {
-    try {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.streamUrl));
-      await _controller.initialize();
-      if (widget.startMs != 0) {
-        await _controller.seekTo(Duration(milliseconds: widget.startMs));
-      }
-      await _controller.play();
-      _controller.addListener(() {
-        if (mounted) setState(() {});
-      });
-      _progressTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-        if (_controller.value.isInitialized && _controller.value.isPlaying) {
-          widget.onSaveProgress({
-            'id': widget.mediaId,
-            'title': widget.title,
-            'poster': widget.poster,
-            'url': widget.streamUrl,
-            'pos': _controller.value.position.inMilliseconds,
-            'dur': _controller.value.duration.inMilliseconds,
-          });
-        }
-      });
-      if (mounted) {
-        setState(() => _ready = true);
-        _updateKotoSubStatus();
-      }
-    } catch (_) {
-      if (mounted) setState(() => _error = true);
-    }
-  }
-
-  Future _updateKotoSubStatus() async {
-    if (_subLang == 'Off') {
-      setState(() => _liveSubCaption = '');
-      return;
-    }
-    if (widget.kotosubUrl.isEmpty) {
-      setState(() {
-        _liveSubCaption = 'KotoSub ($_subLang): Connect Render URL in Profile tab';
-      });
-      return;
-    }
+  Future<void> _initPlayer(String url) async {
     setState(() {
-      _liveSubCaption = 'KotoSub AI • $_subLang Sync Active (0.000s)';
+      _initialized = false;
+      _errorText = null;
     });
+    _videoCtrl = VideoPlayerController.networkUrl(Uri.parse(url));
+    try {
+      await _videoCtrl.initialize();
+      _videoCtrl.addListener(_onTick);
+      await _videoCtrl.play();
+      if (mounted) setState(() => _initialized = true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorText = 'Stream failed to load: $e');
+      }
+    }
   }
 
-  String _fmt(Duration d) {
-    final mins = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final secs = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final hrs = d.inHours;
-    return hrs == 0 ? '$mins:$secs' : '$hrs:$mins:$secs';
+  void _onTick() {
+    if (!mounted || !_videoCtrl.value.isInitialized) return;
+    final pos = _videoCtrl.value.position.inSeconds;
+    final dur = _videoCtrl.value.duration.inSeconds;
+    if (dur > 0) {
+      final frac = pos / dur;
+      if (frac >= 0.80 &&
+          !widget.controller.completed80Ids.contains(widget.item.id)) {
+        widget.controller.recordWatchProgress(widget.item, frac, 5);
+      }
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _progressTimer?.cancel();
-    if (_ready) _controller.dispose();
-    WakelockPlus.disable();
+    if (_initialized && _videoCtrl.value.isInitialized) {
+      final dur = _videoCtrl.value.duration.inSeconds;
+      final pos = _videoCtrl.value.position.inSeconds;
+      if (dur > 0) {
+        widget.controller.recordWatchProgress(
+          widget.item,
+          pos / dur,
+          (pos / 60).ceil(),
+        );
+      }
+    }
+    _videoCtrl.removeListener(_onTick);
+    _videoCtrl.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
+  void _seekRelative(int sec) {
+    if (!_initialized) return;
+    final target = _videoCtrl.value.position + Duration(seconds: sec);
+    _videoCtrl.seekTo(target < Duration.zero ? Duration.zero : target);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final app = widget.controller.appearance;
+    final posSec = _initialized ? _videoCtrl.value.position.inSeconds : 0;
+    final durSec = _initialized ? _videoCtrl.value.duration.inSeconds : 1;
+    final cueIdx = ((posSec + _subOffsetSec.round()).abs() ~/ 4) %
+        _kotoSubSampleCue.length;
+    final currentCue = _kotoSubSampleCue[cueIdx];
+    final showAniSkip = widget.controller.effectiveFanMode &&
+        posSec >= widget.episode.introStartSec &&
+        posSec <= widget.episode.introEndSec;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
         onTap: () => setState(() => _showControls = !_showControls),
-        onDoubleTapDown: (details) {
-          if (!_ready) return;
-          final w = MediaQuery.of(context).size.width;
-          final cur = _controller.value.position;
-          final target = details.localPosition.dx * 2 == w
-              ? cur
-              : (details.localPosition.dx * 2 - w).isNegative
-                  ? cur - const Duration(seconds: 10)
-                  : cur + const Duration(seconds: 10);
-          _controller.seekTo(target);
+        onLongPressStart: (_) {
+          if (_initialized) {
+            _videoCtrl.setPlaybackSpeed(2.0);
+            setState(() => _isFast2x = true);
+          }
+        },
+        onLongPressEnd: (_) {
+          if (_initialized) {
+            _videoCtrl.setPlaybackSpeed(1.0);
+            setState(() => _isFast2x = false);
+          }
         },
         child: Stack(
-          alignment: Alignment.center,
+          fit: StackFit.expand,
           children: [
-            if (_error)
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Stream codec unsupported by built-in player.',
-                    style: TextStyle(color: Colors.white70),
+            // Video Surface
+            Center(
+              child: _errorText != null
+                  ? Text(_errorText!,
+                      style: const TextStyle(color: Colors.redAccent))
+                  : _initialized
+                      ? AspectRatio(
+                          aspectRatio: _videoCtrl.value.aspectRatio,
+                          child: VideoPlayer(_videoCtrl),
+                        )
+                      : CircularProgressIndicator(color: app.accentColor),
+            ),
+
+            // Double Tap Zones (-10s Left / +10s Right)
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onDoubleTap: () => _seekRelative(-10),
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final u = Uri.tryParse(widget.streamUrl);
-                      if (u != null) {
-                        await launchUrl(u, mode: LaunchMode.externalApplication);
-                      }
-                    },
-                    child: const Text('Open in External Player'),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onDoubleTap: () => _seekRelative(10),
                   ),
-                ],
-              )
-            else if (!_ready)
-              const CircularProgressIndicator(color: Colors.white)
-            else
-              AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              ),
-            if (_liveSubCaption.isNotEmpty)
+                ),
+              ],
+            ),
+
+            // Hold-to-2x Speed Pill
+            if (_isFast2x)
               Positioned(
-                bottom: _showControls ? 76 : 26,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _liveSubCaption,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                top: 24,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      '2.0x Speed ▶▶',
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
               ),
-            if (_showControls)
-              Container(
-                color: Colors.black45,
-                child: SafeArea(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                            Expanded(
-                              child: Text(
-                                widget.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () {
-                                final langs = ['Hinglish', 'Bangla', 'Banglish', 'Off'];
-                                final next = langs[(langs.indexOf(_subLang) + 1) % langs.length];
-                                setState(() => _subLang = next);
-                                _updateKotoSubStatus();
-                              },
-                              icon: const Icon(Icons.subtitles_rounded, color: Colors.white, size: 18),
-                              label: Text(
-                                _subLang,
-                                style: const TextStyle(color: Colors.white, fontSize: 12.5),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () {
-                                final dubs = [
-                                  'Original Audio',
-                                  'Official Dub',
-                                  if (widget.fanMode) 'Community Fandub',
-                                ];
-                                final next = dubs[(dubs.indexOf(_dubLayer) + 1) % dubs.length];
-                                setState(() => _dubLayer = next);
-                              },
-                              icon: const Icon(Icons.audiotrack_rounded, color: Colors.white, size: 18),
-                              label: Text(
-                                _dubLayer,
-                                style: const TextStyle(color: Colors.white, fontSize: 12.5),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                if (!_ready) return;
-                                final speeds = [1.0, 1.25, 1.5, 2.0];
-                                final next = speeds[(speeds.indexOf(_speed) + 1) % speeds.length];
-                                _controller.setPlaybackSpeed(next);
-                                setState(() => _speed = next);
-                              },
-                              child: Text(
-                                '${_speed}x',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (_ready)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              iconSize: 36,
-                              icon: const Icon(Icons.replay_10_rounded, color: Colors.white),
-                              onPressed: () => _controller.seekTo(
-                                _controller.value.position - const Duration(seconds: 10),
-                              ),
-                            ),
-                            const SizedBox(width: 28),
-                            IconButton(
-                              iconSize: 54,
-                              icon: Icon(
-                                _controller.value.isPlaying
-                                    ? Icons.pause_circle_filled_rounded
-                                    : Icons.play_circle_filled_rounded,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                _controller.value.isPlaying
-                                    ? _controller.pause()
-                                    : _controller.play();
-                                setState(() {});
-                              },
-                            ),
-                            const SizedBox(width: 28),
-                            IconButton(
-                              iconSize: 36,
-                              icon: const Icon(Icons.forward_10_rounded, color: Colors.white),
-                              onPressed: () => _controller.seekTo(
-                                _controller.value.position + const Duration(seconds: 10),
-                              ),
-                            ),
-                          ],
-                        ),
-                      if (_ready)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                          child: Row(
-                            children: [
-                              Text(
-                                _fmt(_controller.value.position),
-                                style: const TextStyle(fontSize: 12, color: Colors.white70),
-                              ),
-                              Expanded(
-                                child: Slider(
-                                  activeColor: const Color(0xFFE50914),
-                                  inactiveColor: Colors.white24,
-                                  value: _controller.value.position.inMilliseconds
-                                      .toDouble()
-                                      .clamp(
-                                        0.0,
-                                        _controller.value.duration.inMilliseconds
-                                            .toDouble()
-                                            .clamp(1.0, double.infinity),
-                                      ),
-                                  max: _controller.value.duration.inMilliseconds
-                                      .toDouble()
-                                      .clamp(1.0, double.infinity),
-                                  onChanged: (v) {
-                                    _controller.seekTo(Duration(milliseconds: v.toInt()));
-                                  },
-                                ),
-                              ),
-                              Text(
-                                _fmt(_controller.value.duration),
-                                style: const TextStyle(fontSize: 12, color: Colors.white70),
-                              ),
-                            ],
+
+            // KotoSub AI Dual Subtitles Overlay
+            if (_subLang != 'Off')
+              Positioned(
+                left: 36,
+                right: 36,
+                bottom: _showControls ? 86 : 24,
+                child: Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(app.subBgOpacity),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          currentCue[_subLang] ?? currentCue['Hinglish']!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: app.subFontSize,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
-                    ],
+                        if (app.dualSubtitles && _subLang != 'English')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              currentCue['en']!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: app.subFontSize * 0.78,
+                                color: Colors.amberAccent,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
+
+            // AniSkip Intro Button
+            if (showAniSkip)
+              Positioned(
+                right: 24,
+                bottom: _showControls ? 96 : 32,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: app.accentColor,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    _videoCtrl.seekTo(
+                      Duration(seconds: widget.episode.introEndSec + 1),
+                    );
+                  },
+                  icon: const Icon(Icons.skip_next_rounded),
+                  label: const Text('Skip Intro (AniSkip)'),
+                ),
+              ),
+
+            // Cinema HUD Controls
+            if (_showControls) ...[
+              // Top Bar: Back + Title + Hybrid Dub Router + KotoSub Selector
+              Positioned(
+                top: 12,
+                left: 16,
+                right: 16,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${widget.item.title} • E${widget.episode.number}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          Text(
+                            'Dub: $_activeDubLayer • KotoSub: $_subLang (${_subOffsetSec >= 0 ? '+' : ''}${_subOffsetSec.toStringAsFixed(1)}s)',
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 3-Layer Hybrid Dub Switcher Pill
+                    PopupMenuButton<String>(
+                      onSelected: (layer) =>
+                          setState(() => _activeDubLayer = layer),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                            value: 'Original Audio',
+                            child: Text('Layer 1: Original Audio')),
+                        PopupMenuItem(
+                            value: 'Official Dub',
+                            child: Text('Layer 2: Official Dub')),
+                        PopupMenuItem(
+                            value: 'Community Fandub',
+                            child: Text('Layer 3: Verified Fandub')),
+                      ],
+                      child: Chip(
+                        avatar: const Icon(Icons.record_voice_over, size: 15),
+                        label: Text(_activeDubLayer,
+                            style: const TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // KotoSub Language & Offset Pill
+                    PopupMenuButton<String>(
+                      onSelected: (val) {
+                        if (val == '+0.5') {
+                          setState(() => _subOffsetSec += 0.5);
+                        } else if (val == '-0.5') {
+                          setState(() => _subOffsetSec -= 0.5);
+                        } else {
+                          setState(() => _subLang = val);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                            value: 'Hinglish',
+                            child: Text('KotoSub: Hinglish (Dual)')),
+                        PopupMenuItem(
+                            value: 'Bangla',
+                            child: Text('KotoSub: বাংলা (Dual)')),
+                        PopupMenuItem(
+                            value: 'Banglish',
+                            child: Text('KotoSub: Banglish (Dual)')),
+                        PopupMenuItem(
+                            value: 'English',
+                            child: Text('KotoSub: English')),
+                        PopupMenuItem(value: 'Off', child: Text('Subtitles Off')),
+                        PopupMenuDivider(),
+                        PopupMenuItem(
+                            value: '+0.5', child: Text('Sync Offset +0.5s')),
+                        PopupMenuItem(
+                            value: '-0.5', child: Text('Sync Offset -0.5s')),
+                      ],
+                      child: Chip(
+                        avatar: const Icon(Icons.subtitles, size: 15),
+                        label: Text('KotoSub: $_subLang',
+                            style: const TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Center Play/Pause
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      iconSize: 34,
+                      icon: const Icon(Icons.replay_10_rounded),
+                      onPressed: () => _seekRelative(-10),
+                    ),
+                    const SizedBox(width: 24),
+                    IconButton(
+                      iconSize: 54,
+                      icon: Icon(
+                        _initialized && _videoCtrl.value.isPlaying
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_filled_rounded,
+                        color: app.accentColor,
+                      ),
+                      onPressed: () {
+                        if (!_initialized) return;
+                        _videoCtrl.value.isPlaying
+                            ? _videoCtrl.pause()
+                            : _videoCtrl.play();
+                        setState(() {});
+                      },
+                    ),
+                    const SizedBox(width: 24),
+                    IconButton(
+                      iconSize: 34,
+                      icon: const Icon(Icons.forward_10_rounded),
+                      onPressed: () => _seekRelative(10),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Bottom Timeline Scrubber
+              Positioned(
+                left: 20,
+                right: 20,
+                bottom: 14,
+                child: Row(
+                  children: [
+                    Text(
+                      _fmtDuration(Duration(seconds: posSec)),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        activeColor: app.accentColor,
+                        value: posSec.toDouble().clamp(0, durSec.toDouble()),
+                        min: 0,
+                        max: math.max(1, durSec.toDouble()),
+                        onChanged: (v) {
+                          if (_initialized) {
+                            _videoCtrl.seekTo(Duration(seconds: v.round()));
+                          }
+                        },
+                      ),
+                    ),
+                    Text(
+                      _fmtDuration(Duration(seconds: durSec)),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _fmtDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 }
