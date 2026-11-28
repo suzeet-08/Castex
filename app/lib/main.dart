@@ -24,12 +24,12 @@ class CastexApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF000000),
         canvasColor: const Color(0xFF000000),
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF00E5FF),
-          secondary: Color(0xFF7C4DFF),
-          surface: Color(0xFF0C0C0E),
+          primary: Color(0xFFFFFFFF),
+          secondary: Color(0xFFE50914),
+          surface: Color(0xFF0E0E11),
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF000000),
+          backgroundColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
         ),
@@ -49,6 +49,7 @@ class CastexHomeShell extends StatefulWidget {
 
 class _CastexHomeShellState extends State<CastexHomeShell> {
   int _tabIndex = 0;
+  int _heroPage = 0;
   bool _fanMode = true;
   bool _loading = true;
   bool _hasUnreadNotice = true;
@@ -218,27 +219,34 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
 
     final titleText = (ann is Map && ann['title'] != null)
         ? ann['title'].toString()
-        : 'Castex Updates';
+        : 'What\'s New in Castex';
     final msgText = (ann is Map && ann['message'] != null)
         ? ann['message'].toString()
-        : 'No new announcements right now. Enjoy ad-free streaming!';
+        : 'No new updates right now.';
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF101014),
+        backgroundColor: const Color(0xFF121216),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Colors.white12),
+        ),
         title: Text(
           titleText,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         content: Text(
           msgText,
-          style: const TextStyle(color: Colors.white70),
+          style: const TextStyle(color: Colors.white70, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
+            child: const Text(
+              'Got it',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -249,9 +257,9 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0A0A0D),
+      backgroundColor: const Color(0xFF0B0B0E),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => MediaDetailSheet(
         item: item,
@@ -266,208 +274,448 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: _tabIndex == 0,
       appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xCC000000),
+                Color(0x00000000),
+              ],
+            ),
+          ),
+        ),
         title: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFF00E5FF).withOpacity(0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFF00E5FF), width: 1),
-              ),
-              child: const Text(
-                'CASTEX',
-                style: TextStyle(
-                  color: Color(0xFF00E5FF),
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.4,
-                  fontSize: 15,
-                ),
+            const Text(
+              'Castex',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 22,
+                letterSpacing: -0.5,
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              _fanMode ? 'FAN' : 'SIMPLE',
-              style: TextStyle(
-                fontSize: 11,
-                color: _fanMode ? const Color(0xFF7C4DFF) : Colors.white54,
-                fontWeight: FontWeight.bold,
+            const SizedBox(width: 4),
+            Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE50914),
+                shape: BoxShape.circle,
               ),
             ),
           ],
         ),
         actions: [
-          Row(
-            children: [
-              const Text('Fan', style: TextStyle(fontSize: 12, color: Colors.white70)),
-              Switch(
-                value: _fanMode,
-                onChanged: _toggleMode,
-                activeColor: const Color(0xFF00E5FF),
+          GestureDetector(
+            onTap: () => _toggleMode(!_fanMode),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white12),
               ),
-            ],
+              child: Row(
+                children: [
+                  Icon(
+                    _fanMode ? Icons.auto_awesome_rounded : Icons.tv_rounded,
+                    size: 13,
+                    color: _fanMode ? const Color(0xFFF5C518) : Colors.white70,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _fanMode ? 'Fan Mode' : 'Simple',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.search_rounded, size: 22),
+            onPressed: () => setState(() => _tabIndex = 1),
           ),
           Stack(
             children: [
               IconButton(
-                icon: const Icon(Icons.notifications_none_rounded),
+                icon: const Icon(Icons.notifications_none_rounded, size: 22),
                 onPressed: _showNotificationDialog,
               ),
               if (_hasUnreadNotice)
                 Positioned(
-                  right: 10,
-                  top: 10,
+                  right: 11,
+                  top: 11,
                   child: Container(
-                    width: 8,
-                    height: 8,
+                    width: 7,
+                    height: 7,
                     decoration: const BoxDecoration(
-                      color: Color(0xFF00E5FF),
+                      color: Color(0xFFE50914),
                       shape: BoxShape.circle,
                     ),
                   ),
                 ),
             ],
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2.2,
+              ),
             )
           : IndexedStack(
               index: _tabIndex,
               children: [
                 _buildHomeTab(),
+                _buildSearchTab(),
                 _buildPluginsTab(),
-                _buildCommunityTab(),
+                _buildProfileTab(),
               ],
             ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF070709),
-        indicatorColor: const Color(0xFF00E5FF).withOpacity(0.18),
-        selectedIndex: _tabIndex,
-        onDestinationSelected: (i) => setState(() => _tabIndex = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.play_circle_outline),
-            selectedIcon: Icon(Icons.play_circle_fill, color: Color(0xFF00E5FF)),
-            label: 'Stream',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.extension_outlined),
-            selectedIcon: Icon(Icons.extension, color: Color(0xFF00E5FF)),
-            label: 'Plugins',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.hub_outlined),
-            selectedIcon: Icon(Icons.hub, color: Color(0xFF00E5FF)),
-            label: 'HQ & Sync',
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF050507),
+          border: Border(top: BorderSide(color: Colors.white10, width: 0.6)),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _tabIndex,
+          onTap: (i) => setState(() => _tabIndex = i),
+          backgroundColor: const Color(0xFF050507),
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: Colors.white,
+          unselectedItemColor: Colors.white38,
+          selectedFontSize: 11,
+          unselectedFontSize: 11,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home_rounded),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.search_rounded),
+              activeIcon: Icon(Icons.search_rounded),
+              label: 'Search',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.extension_outlined),
+              activeIcon: Icon(Icons.extension_rounded),
+              label: 'Addons',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline_rounded),
+              activeIcon: Icon(Icons.person_rounded),
+              label: 'Profile',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeTab() {
+    final heroItems = _movies.take(5).toList();
+    return RefreshIndicator(
+      color: Colors.white,
+      backgroundColor: const Color(0xFF141418),
+      onRefresh: _initCastex,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          if (heroItems.isNotEmpty) _buildHeroSpotlight(heroItems),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_fanMode && _fandubRoutes.isNotEmpty) ...[
+                  const Text(
+                    'Community Fandubs',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 82,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _fandubRoutes.length,
+                      itemBuilder: (ctx, i) {
+                        final rawR = _fandubRoutes[i];
+                        final r = rawR is Map ? rawR : {};
+                        return GestureDetector(
+                          onTap: () async {
+                            final u = Uri.tryParse((r['external_url'] ?? '').toString());
+                            if (u != null) {
+                              await launchUrl(u, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          child: Container(
+                            width: 230,
+                            margin: const EdgeInsets.only(right: 12),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF111115),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  (r['title'] ?? 'Fandub').toString(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${r['dub_language']} • ${r['creator_name']}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white60,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                ],
+                _buildPosterSection('Trending Movies', _movies),
+                const SizedBox(height: 24),
+                _buildPosterSection('Top Series & Anime', _series),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHomeTab() {
-    final q = _searchQuery.toLowerCase();
-    final filteredMovies = q.isEmpty
-        ? _movies
-        : _movies
-            .where((m) => (m is Map ? (m['name'] ?? '') : '').toString().toLowerCase().contains(q))
-            .toList();
-    final filteredSeries = q.isEmpty
-        ? _series
-        : _series
-            .where((s) => (s is Map ? (s['name'] ?? '') : '').toString().toLowerCase().contains(q))
-            .toList();
-
-    return RefreshIndicator(
-      color: const Color(0xFF00E5FF),
-      onRefresh: _initCastex,
-      child: ListView(
-        padding: const EdgeInsets.all(14),
+  Widget _buildHeroSpotlight(List heroItems) {
+    return SizedBox(
+      height: 430,
+      child: Stack(
         children: [
-          TextField(
-            onChanged: (v) => setState(() => _searchQuery = v),
-            decoration: InputDecoration(
-              hintText: 'Search movies, series or anime...',
-              hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-              prefixIcon: const Icon(Icons.search, color: Colors.white54),
-              filled: true,
-              fillColor: const Color(0xFF0E0E12),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          if (_fanMode && _fandubRoutes.isNotEmpty) ...[
-            const Text(
-              'Verified Community Fandubs',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 92,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _fandubRoutes.length,
-                itemBuilder: (ctx, i) {
-                  final rawR = _fandubRoutes[i];
-                  final r = rawR is Map ? rawR : {};
-                  return GestureDetector(
-                    onTap: () async {
-                      final u = Uri.tryParse((r['external_url'] ?? '').toString());
-                      if (u != null) {
-                        await launchUrl(u, mode: LaunchMode.externalApplication);
-                      }
-                    },
-                    child: Container(
-                      width: 220,
-                      margin: const EdgeInsets.only(right: 10),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF101016),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFF7C4DFF).withOpacity(0.45),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            (r['title'] ?? 'Fandub').toString(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${r['dub_language']} • by ${r['creator_name']}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF00E5FF),
-                            ),
-                          ),
+          PageView.builder(
+            itemCount: heroItems.length,
+            onPageChanged: (idx) => setState(() => _heroPage = idx),
+            itemBuilder: (ctx, idx) {
+              final raw = heroItems[idx];
+              final item = raw is Map ? raw : {};
+              final id = (item['id'] ?? '').toString();
+              final poster = (item['poster'] ?? '').toString();
+              final backdrop = id.startsWith('tt')
+                  ? 'https://images.metahub.space/background/medium/$id/img'
+                  : poster;
+              final title = (item['name'] ?? 'Featured').toString();
+              final rating = (item['imdbRating'] ?? '').toString();
+              final year = (item['releaseInfo'] ?? '').toString();
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (backdrop.isNotEmpty)
+                    Image.network(
+                      backdrop,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => poster.isNotEmpty
+                          ? Image.network(poster, fit: BoxFit.cover)
+                          : Container(color: const Color(0xFF101014)),
+                    )
+                  else
+                    Container(color: const Color(0xFF101014)),
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0.0, 0.35, 0.78, 1.0],
+                        colors: [
+                          Color(0x99000000),
+                          Color(0x11000000),
+                          Color(0xDD000000),
+                          Color(0xFF000000),
                         ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                  Positioned(
+                    left: 18,
+                    right: 18,
+                    bottom: 24,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (rating.isNotEmpty) ...[
+                              const Icon(
+                                Icons.star_rounded,
+                                color: Color(0xFFF5C518),
+                                size: 15,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                rating,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFF5C518),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                            if (year.isNotEmpty)
+                              Text(
+                                year,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white12,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Text(
+                                'HD • KotoSub',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            height: 1.15,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 11,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                              ),
+                              onPressed: () => _openDetailSheet(item),
+                              icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                              label: const Text(
+                                'Watch Now',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: Colors.white10,
+                                side: const BorderSide(color: Colors.white24),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 11,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                              ),
+                              onPressed: () => _openDetailSheet(item),
+                              icon: const Icon(Icons.info_outline_rounded, size: 19),
+                              label: const Text(
+                                'Details',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          Positioned(
+            bottom: 6,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                heroItems.length,
+                (i) => Container(
+                  width: _heroPage == i ? 16 : 5,
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    color: _heroPage == i ? Colors.white : Colors.white24,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 18),
-          ],
-          _buildPosterSection('Popular Movies', filteredMovies),
-          const SizedBox(height: 20),
-          _buildPosterSection('Top Series & Anime', filteredSeries),
+          ),
         ],
       ),
     );
@@ -479,65 +727,28 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+          ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         if (items.isEmpty)
           const Text(
-            'No items found. Pull down to refresh.',
+            'Pull down to load catalog.',
             style: TextStyle(color: Colors.white38, fontSize: 13),
           )
         else
           SizedBox(
-            height: 205,
+            height: 222,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
               itemBuilder: (ctx, i) {
                 final rawItem = items[i];
                 final item = rawItem is Map ? rawItem : {};
-                final poster = (item['poster'] ?? '').toString();
-                return GestureDetector(
-                  onTap: () => _openDetailSheet(item),
-                  child: Container(
-                    width: 122,
-                    margin: const EdgeInsets.only(right: 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              color: const Color(0xFF121216),
-                              width: double.infinity,
-                              child: poster.isNotEmpty
-                                  ? Image.network(
-                                      poster,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.movie_outlined,
-                                        color: Colors.white24,
-                                      ),
-                                    )
-                                  : const Icon(Icons.movie_outlined),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          (item['name'] ?? 'Untitled').toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
+                return _buildPosterCard(item);
               },
             ),
           ),
@@ -545,180 +756,376 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     );
   }
 
-  Widget _buildPluginsTab() {
-    final controller = TextEditingController();
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'URL / JSON Plugin Manager',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Paste any Stremio Addon URL (manifest.json) or Castex JSON catalog pack.',
-          style: TextStyle(color: Colors.white54, fontSize: 13),
-        ),
-        const SizedBox(height: 14),
-        Row(
+  Widget _buildPosterCard(Map item, {double width = 128}) {
+    final poster = (item['poster'] ?? '').toString();
+    final rating = (item['imdbRating'] ?? '').toString();
+
+    return GestureDetector(
+      onTap: () => _openDetailSheet(item),
+      child: Container(
+        width: width,
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: TextField(
-                controller: controller,
-                decoration: InputDecoration(
-                  hintText: 'https://.../manifest.json',
-                  hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
-                  filled: true,
-                  fillColor: const Color(0xFF0E0E12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      color: const Color(0xFF121216),
+                      width: double.infinity,
+                      height: double.infinity,
+                      child: poster.isNotEmpty
+                          ? Image.network(
+                              poster,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.movie_outlined,
+                                color: Colors.white24,
+                              ),
+                            )
+                          : const Icon(Icons.movie_outlined, color: Colors.white24),
+                    ),
                   ),
-                ),
+                  if (rating.isNotEmpty)
+                    Positioned(
+                      top: 7,
+                      right: 7,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xCC000000),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Color(0xFFF5C518),
+                              size: 11,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              rating,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00E5FF),
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            const SizedBox(height: 7),
+            Text(
+              (item['name'] ?? 'Untitled').toString(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
-              onPressed: () {
-                _addPluginUrl(controller.text);
-                controller.clear();
-              },
-              child: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        Text(
-          'Installed Plugins (${_pluginUrls.length})',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-        ),
-        const SizedBox(height: 10),
-        ..._pluginUrls.map((rawU) {
-          final u = rawU.toString();
-          final match = _loadedPlugins.where((p) => p is Map && p['url'] == u).toList();
-          String name = 'Remote JSON / Addon';
-          if (match.isNotEmpty) {
-            final d = (match.first as Map)['data'];
-            if (d is Map && d['name'] != null) {
-              name = d['name'].toString();
-            }
-          }
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0D0D11),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Color(0xFF00E5FF), size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(
-                        u,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: Colors.white38),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  onPressed: () => _removePluginUrl(u),
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
+      ),
     );
   }
 
-  Widget _buildCommunityTab() {
+  Widget _buildSearchTab() {
+    final q = _searchQuery.toLowerCase();
+    final combined = [..._movies, ..._series];
+    final filtered = q.isEmpty
+        ? combined
+        : combined
+            .where((item) =>
+                (item is Map ? (item['name'] ?? '') : '')
+                    .toString()
+                    .toLowerCase()
+                    .contains(q))
+            .toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: Column(
+          children: [
+            TextField(
+              onChanged: (v) => setState(() => _searchQuery = v),
+              style: const TextStyle(fontSize: 15),
+              decoration: InputDecoration(
+                hintText: 'Search movies, shows, anime...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 14.5),
+                prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
+                filled: true,
+                fillColor: const Color(0xFF121216),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Colors.white10),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Colors.white10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: GridView.builder(
+                itemCount: filtered.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.58,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 14,
+                ),
+                itemBuilder: (ctx, i) {
+                  final raw = filtered[i];
+                  final item = raw is Map ? raw : {};
+                  return _buildPosterCard(item, width: double.infinity);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPluginsTab() {
+    final controller = TextEditingController();
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          const Text(
+            'Addons & Extensions',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Install Stremio manifest URLs or Castex community JSON packs.',
+            style: TextStyle(color: Colors.white54, fontSize: 13.5),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    hintText: 'https://.../manifest.json',
+                    hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
+                    filled: true,
+                    fillColor: const Color(0xFF121216),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  _addPluginUrl(controller.text);
+                  controller.clear();
+                },
+                child: const Text('Install', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Active Addons (${_pluginUrls.length})',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+          const SizedBox(height: 12),
+          ..._pluginUrls.map((rawU) {
+            final u = rawU.toString();
+            final match = _loadedPlugins.where((p) => p is Map && p['url'] == u).toList();
+            String name = 'Stremio / Remote JSON Addon';
+            if (match.isNotEmpty) {
+              final d = (match.first as Map)['data'];
+              if (d is Map && d['name'] != null) {
+                name = d['name'].toString();
+              }
+            }
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF101014),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(
+                          u,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11.5, color: Colors.white38),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.white54),
+                    onPressed: () => _removePluginUrl(u),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileTab() {
     final rawLinks = _remoteConfig['community_links'];
     final links = rawLinks is Map ? rawLinks : {};
     final kotoCtrl = TextEditingController(text: _kotosubUrl);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'KotoSub AI Server URL',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Enter your Render KotoSub URL for 0.000s Hinglish & Bangla subtitles.',
-          style: TextStyle(color: Colors.white54, fontSize: 12.5),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: kotoCtrl,
-                decoration: InputDecoration(
-                  hintText: 'https://your-kotosub.onrender.com',
-                  hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
-                  filled: true,
-                  fillColor: const Color(0xFF0E0E12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          const Text(
+            'Profile & Settings',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF101014),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Anime & Fan Mode',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Show community fandubs, lore & extra tools',
+                style: TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              value: _fanMode,
+              activeColor: Colors.white,
+              onChanged: _toggleMode,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'KotoSub AI Engine',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Connect your Render KotoSub server for Hinglish & Bangla subtitles.',
+            style: TextStyle(color: Colors.white54, fontSize: 12.5),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: kotoCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'https://your-kotosub.onrender.com',
+                    hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
+                    filled: true,
+                    fillColor: const Color(0xFF121216),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7C4DFF),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('kotosub_url', kotoCtrl.text.trim());
+                  setState(() => _kotosubUrl = kotoCtrl.text.trim());
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('KotoSub server saved')),
+                    );
+                  }
+                },
+                child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
-              onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setString('kotosub_url', kotoCtrl.text.trim());
-                setState(() => _kotosubUrl = kotoCtrl.text.trim());
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('KotoSub server saved!')),
-                  );
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        const Text(
-          'Castex Official Channels',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        _linkTile('GitHub Repository (GPLv3)', (links['github'] ?? '').toString()),
-        _linkTile('Discord Dev & Beta HQ', (links['discord'] ?? '').toString()),
-        _linkTile('Public Instagram Updates', (links['instagram'] ?? '').toString()),
-        _linkTile('Companion Website', (links['website'] ?? '').toString()),
-        const SizedBox(height: 20),
-        const Text(
-          'Castex v1.0.0 • Open-Source & Ad-Free\nCastex does not host any media files.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white30, fontSize: 11.5),
-        ),
-      ],
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Community & Source',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          _linkTile('GitHub Open-Source (GPLv3)', (links['github'] ?? '').toString()),
+          _linkTile('Discord Community', (links['discord'] ?? '').toString()),
+          _linkTile('Instagram Updates', (links['instagram'] ?? '').toString()),
+          _linkTile('Official Website', (links['website'] ?? '').toString()),
+          const SizedBox(height: 22),
+          const Text(
+            'Castex v1.0.0 • Ad-Free & Open-Source\nCastex does not host or distribute any media files.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white30, fontSize: 11.5),
+          ),
+        ],
+      ),
     );
   }
 
@@ -726,12 +1133,13 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D0D11),
-        borderRadius: BorderRadius.circular(10),
+        color: const Color(0xFF101014),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
       ),
       child: ListTile(
         title: Text(label, style: const TextStyle(fontSize: 14)),
-        trailing: const Icon(Icons.open_in_new, size: 18, color: Color(0xFF00E5FF)),
+        trailing: const Icon(Icons.open_in_new_rounded, size: 18, color: Colors.white54),
         onTap: () async {
           final u = Uri.tryParse(url);
           if (u != null && url.startsWith('http')) {
@@ -765,7 +1173,7 @@ class MediaDetailSheet extends StatefulWidget {
 
 class _MediaDetailSheetState extends State<MediaDetailSheet> {
   String _selectedDubLayer = 'Original Audio';
-  String _selectedSubLang = 'Hinglish (KotoSub AI)';
+  String _selectedSubLang = 'Hinglish';
   List _streams = [];
   bool _fetchingStreams = false;
 
@@ -820,6 +1228,9 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
   Widget build(BuildContext context) {
     final title = (widget.item['name'] ?? 'Unknown').toString();
     final desc = (widget.item['description'] ?? 'No synopsis available.').toString();
+    final rating = (widget.item['imdbRating'] ?? '').toString();
+    final year = (widget.item['releaseInfo'] ?? '').toString();
+
     final dubOptions = [
       'Original Audio',
       'Official Dub',
@@ -827,13 +1238,13 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
     ];
     final subOptions = [
       'Off',
-      'Hinglish (KotoSub AI)',
-      'Bangla (KotoSub AI)',
-      'Banglish (KotoSub AI)',
+      'Hinglish',
+      'Bangla',
+      'Banglish',
     ];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 30),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -841,7 +1252,7 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
           children: [
             Center(
               child: Container(
-                width: 40,
+                width: 38,
                 height: 4,
                 decoration: BoxDecoration(
                   color: Colors.white24,
@@ -849,68 +1260,123 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             Text(
               title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
             ),
             const SizedBox(height: 6),
+            Row(
+              children: [
+                if (rating.isNotEmpty) ...[
+                  const Icon(Icons.star_rounded, color: Color(0xFFF5C518), size: 15),
+                  const SizedBox(width: 4),
+                  Text(
+                    rating,
+                    style: const TextStyle(
+                      color: Color(0xFFF5C518),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                if (year.isNotEmpty)
+                  Text(
+                    year,
+                    style: const TextStyle(color: Colors.white60, fontSize: 13),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
             Text(
               desc,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white60, fontSize: 13),
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 13.5,
+                height: 1.4,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             const Text(
-              'Hybrid Dub Router',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              'Audio & Dub Track',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: dubOptions
                   .map(
                     (d) => ChoiceChip(
-                      label: Text(d, style: const TextStyle(fontSize: 12)),
+                      label: Text(
+                        d,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: _selectedDubLayer == d ? Colors.black : Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       selected: _selectedDubLayer == d,
-                      selectedColor: const Color(0xFF7C4DFF),
+                      selectedColor: Colors.white,
+                      backgroundColor: const Color(0xFF141418),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: const BorderSide(color: Colors.white12),
+                      ),
                       onSelected: (_) => setState(() => _selectedDubLayer = d),
                     ),
                   )
                   .toList(),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             const Text(
               'KotoSub AI Subtitles',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: subOptions
                   .map(
                     (s) => ChoiceChip(
-                      label: Text(s, style: const TextStyle(fontSize: 12)),
+                      label: Text(
+                        s,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: _selectedSubLang == s ? Colors.black : Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       selected: _selectedSubLang == s,
-                      selectedColor: const Color(0xFF00E5FF).withOpacity(0.3),
+                      selectedColor: Colors.white,
+                      backgroundColor: const Color(0xFF141418),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: const BorderSide(color: Colors.white12),
+                      ),
                       onSelected: (_) => setState(() => _selectedSubLang = s),
                     ),
                   )
                   .toList(),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             const Text(
-              'Available Addon Streams',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              'Streams',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
             const SizedBox(height: 8),
             if (_fetchingStreams)
-              const LinearProgressIndicator(color: Color(0xFF00E5FF))
+              const LinearProgressIndicator(color: Colors.white)
             else if (_streams.isEmpty)
               const Text(
-                'Add a Stremio stream addon in the Plugins tab to load direct streams.',
-                style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                'Install a Stremio stream addon in the Addons tab to load playback links.',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
               )
             else
               ..._streams.map((rawSt) {
@@ -918,17 +1384,18 @@ class _MediaDetailSheetState extends State<MediaDetailSheet> {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF121218),
-                    borderRadius: BorderRadius.circular(10),
+                    color: const Color(0xFF121216),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white10),
                   ),
                   child: ListTile(
                     title: Text(
                       (st['title'] ?? st['name'] ?? 'Stream').toString(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 13.5),
                     ),
-                    trailing: const Icon(Icons.play_arrow_rounded, color: Color(0xFF00E5FF)),
+                    trailing: const Icon(Icons.play_arrow_rounded, color: Colors.white),
                     onTap: () async {
                       final u = Uri.tryParse((st['url'] ?? '').toString());
                       if (u != null) {
