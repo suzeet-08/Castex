@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +18,225 @@ const String kRemoteConfigUrl =
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const CastexApp());
+}
+
+Future restoreCastexBackupFromString(BuildContext context, String rawJson) async {
+  final decoded = jsonDecode(rawJson.trim());
+  if (decoded is! Map || decoded['profile'] is! Map) {
+    throw Exception('Invalid backup format');
+  }
+  final prof = decoded['profile'] as Map;
+  final name = (prof['name'] ?? '').toString().trim();
+  if (name.isEmpty) {
+    throw Exception('Profile missing in backup');
+  }
+
+  final filePin = (prof['pin'] ?? '').toString().trim();
+  if (filePin.isNotEmpty) {
+    final pinCtrl = TextEditingController();
+    final ok = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF121216),
+        title: const Text('Enter Backup PIN'),
+        content: TextField(
+          controller: pinCtrl,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          obscureText: true,
+          decoration: const InputDecoration(hintText: '4-digit PIN'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, pinCtrl.text.trim() == filePin),
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return false;
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('profile_id', (prof['id'] ?? 'CX-RESTORED').toString());
+  await prefs.setString('profile_name', name);
+  await prefs.setInt('profile_color', (prof['color'] is int) ? prof['color'] : 0xFFE50914);
+  await prefs.setString('profile_pin', filePin);
+  await prefs.setString('profile_created', (prof['created'] ?? '').toString());
+
+  if (decoded['fan_mode'] is bool) {
+    await prefs.setBool('fan_mode', decoded['fan_mode']);
+  }
+  if (decoded['kotosub_url'] != null) {
+    await prefs.setString('kotosub_url', decoded['kotosub_url'].toString());
+  }
+  if (decoded['plugin_urls'] is List) {
+    await prefs.setStringList(
+      'plugin_urls',
+      (decoded['plugin_urls'] as List).map((e) => e.toString()).toList(),
+    );
+  }
+  if (decoded['watchlist'] is List) {
+    await prefs.setString('watchlist_json', jsonEncode(decoded['watchlist']));
+  }
+  if (decoded['continue_watching'] is List) {
+    await prefs.setString(
+      'continue_watching_json',
+      jsonEncode(decoded['continue_watching']),
+    );
+  }
+  return true;
+}
+
+Future showCastexRestoreSheet(BuildContext context, VoidCallback onSuccess) async {
+  final pasteCtrl = TextEditingController();
+  final foundFiles = [];
+
+  try {
+    final dlDir = Directory('/storage/emulated/0/Download');
+    if (await dlDir.exists()) {
+      for (final entity in dlDir.listSync()) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.json')) {
+          foundFiles.add(entity);
+        }
+      }
+    }
+  } catch (_) {}
+
+  if (!context.mounted) return;
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF0E0E12),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        MediaQuery.of(ctx).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Restore Castex Profile',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Select a Castex backup .json file from Downloads or paste your backup JSON below.',
+              style: TextStyle(color: Colors.white60, fontSize: 12.5),
+            ),
+            if (foundFiles.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'Detected JSON Files in Downloads',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              ...foundFiles.take(5).map((rawF) {
+                final f = rawF as File;
+                final fName = f.path.split('/').last;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF15151B),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: ListTile(
+                    leading: const Icon(Icons.description_rounded, color: Colors.white),
+                    title: Text(fName, style: const TextStyle(fontSize: 13.5)),
+                    trailing: const Text(
+                      'Restore',
+                      style: TextStyle(
+                        color: Color(0xFFE50914),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    onTap: () async {
+                      try {
+                        final raw = await f.readAsString();
+                        if (!ctx.mounted) return;
+                        final done = await restoreCastexBackupFromString(ctx, raw);
+                        if (done == true && ctx.mounted) {
+                          Navigator.pop(ctx);
+                          onSuccess();
+                        }
+                      } catch (_) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Invalid backup file.')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                );
+              }),
+            ],
+            const SizedBox(height: 14),
+            TextField(
+              controller: pasteCtrl,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'Paste Castex Backup JSON here...',
+                hintStyle: const TextStyle(color: Colors.white30, fontSize: 12.5),
+                filled: true,
+                fillColor: const Color(0xFF15151B),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.white12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () async {
+                  try {
+                    final done = await restoreCastexBackupFromString(ctx, pasteCtrl.text);
+                    if (done == true && ctx.mounted) {
+                      Navigator.pop(ctx);
+                      onSuccess();
+                    }
+                  } catch (_) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Invalid backup JSON text.')),
+                      );
+                    }
+                  }
+                },
+                child: const Text(
+                  'Restore from Pasted Backup',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class CastexApp extends StatelessWidget {
@@ -152,66 +370,6 @@ class _ProfileOnboardingScreenState extends State<ProfileOnboardingScreen> {
     }
   }
 
-  Future _restoreFromBackupOnStart() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'castex', 'txt'],
-      );
-      if (result == null || result.files.single.path == null) return;
-      final content = await File(result.files.single.path!).readAsString();
-      final decoded = jsonDecode(content);
-      if (decoded is! Map || decoded['profile'] is! Map) {
-        throw Exception('Invalid backup file');
-      }
-      final prof = decoded['profile'] as Map;
-      final name = (prof['name'] ?? '').toString();
-      if (name.isEmpty) throw Exception('Profile missing in backup');
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('profile_id', (prof['id'] ?? 'CX-RESTORED').toString());
-      await prefs.setString('profile_name', name);
-      await prefs.setInt('profile_color', (prof['color'] is int) ? prof['color'] : 0xFFE50914);
-      await prefs.setString('profile_pin', (prof['pin'] ?? '').toString());
-      await prefs.setString('profile_created', (prof['created'] ?? '').toString());
-
-      if (decoded['fan_mode'] is bool) {
-        await prefs.setBool('fan_mode', decoded['fan_mode']);
-      }
-      if (decoded['kotosub_url'] != null) {
-        await prefs.setString('kotosub_url', decoded['kotosub_url'].toString());
-      }
-      if (decoded['plugin_urls'] is List) {
-        await prefs.setStringList(
-          'plugin_urls',
-          (decoded['plugin_urls'] as List).map((e) => e.toString()).toList(),
-        );
-      }
-      if (decoded['watchlist'] is List) {
-        await prefs.setString('watchlist_json', jsonEncode(decoded['watchlist']));
-      }
-      if (decoded['continue_watching'] is List) {
-        await prefs.setString(
-          'continue_watching_json',
-          jsonEncode(decoded['continue_watching']),
-        );
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Welcome back, $name! Backup restored.')),
-        );
-        widget.onProfileReady();
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not restore backup file. Check file format.')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final previewInitial = _nameCtrl.text.trim().isNotEmpty
@@ -250,7 +408,7 @@ class _ProfileOnboardingScreenState extends State<ProfileOnboardingScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Create your local profile to save Watchlist,\nprogress & encrypted Backup/Restore files.',
+                  'Create your local profile to save Watchlist,\nprogress & Backup/Restore files.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white60, fontSize: 13.5, height: 1.4),
                 ),
@@ -343,10 +501,17 @@ class _ProfileOnboardingScreenState extends State<ProfileOnboardingScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextButton.icon(
-                  onPressed: _restoreFromBackupOnStart,
+                  onPressed: () {
+                    showCastexRestoreSheet(context, () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Backup restored!')),
+                      );
+                      widget.onProfileReady();
+                    });
+                  },
                   icon: const Icon(Icons.restore_rounded, size: 18, color: Colors.white70),
                   label: const Text(
-                    'Restore from Existing Castex Backup File',
+                    'Restore from Existing Castex Backup',
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                 ),
@@ -585,34 +750,45 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     if (mounted) setState(() {});
   }
 
+  Future _buildBackupJsonString() async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = {
+      'app': 'Castex',
+      'version': '1.0.0',
+      'exported_at': DateTime.now().toIso8601String(),
+      'profile': {
+        'id': _profileId,
+        'name': _profileName,
+        'color': _profileColor,
+        'pin': _profilePin,
+        'created': prefs.getString('profile_created') ?? '',
+      },
+      'fan_mode': _fanMode,
+      'kotosub_url': _kotosubUrl,
+      'plugin_urls': _pluginUrls,
+      'watchlist': _watchlist,
+      'continue_watching': _continueWatching,
+    };
+    return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
   Future _exportBackupFile() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final payload = {
-        'app': 'Castex',
-        'version': '1.0.0',
-        'exported_at': DateTime.now().toIso8601String(),
-        'profile': {
-          'id': _profileId,
-          'name': _profileName,
-          'color': _profileColor,
-          'pin': _profilePin,
-          'created': prefs.getString('profile_created') ?? '',
-        },
-        'fan_mode': _fanMode,
-        'kotosub_url': _kotosubUrl,
-        'plugin_urls': _pluginUrls,
-        'watchlist': _watchlist,
-        'continue_watching': _continueWatching,
-      };
+      final jsonText = await _buildBackupJsonString();
+      final safeName = _profileName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName = 'Castex_Backup_$safeName.json';
+
+      try {
+        final dlFile = File('/storage/emulated/0/Download/$fileName');
+        await dlFile.writeAsString(jsonText);
+      } catch (_) {}
 
       final dir = await getTemporaryDirectory();
-      final safeName = _profileName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-      final file = File('${dir.path}/Castex_Backup_$safeName.json');
-      await file.writeAsString(const JsonEncoder.withIndent('  ').convert(payload));
+      final tempFile = File('${dir.path}/$fileName');
+      await tempFile.writeAsString(jsonText);
 
       await Share.shareXFiles(
-        [XFile(file.path)],
+        [XFile(tempFile.path)],
         text: 'Castex Profile Backup ($_profileName - $_profileId)',
       );
     } catch (_) {
@@ -624,97 +800,14 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
     }
   }
 
-  Future _restoreBackupFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'castex', 'txt'],
+  Future _copyBackupJson() async {
+    final jsonText = await _buildBackupJsonString();
+    await Clipboard.setData(ClipboardData(text: jsonText));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Backup JSON copied to clipboard!')),
       );
-      if (result == null || result.files.single.path == null) return;
-      final content = await File(result.files.single.path!).readAsString();
-      final decoded = jsonDecode(content);
-      if (decoded is! Map || decoded['profile'] is! Map) {
-        throw Exception('Invalid backup');
-      }
-      final prof = decoded['profile'] as Map;
-      final filePin = (prof['pin'] ?? '').toString();
-
-      if (filePin.isNotEmpty && mounted) {
-        final entered = await _askPinDialog(filePin);
-        if (!entered) return;
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final name = (prof['name'] ?? 'Viewer').toString();
-      await prefs.setString('profile_id', (prof['id'] ?? 'CX-RESTORED').toString());
-      await prefs.setString('profile_name', name);
-      await prefs.setInt('profile_color', (prof['color'] is int) ? prof['color'] : 0xFFE50914);
-      await prefs.setString('profile_pin', filePin);
-
-      if (decoded['fan_mode'] is bool) {
-        await prefs.setBool('fan_mode', decoded['fan_mode']);
-      }
-      if (decoded['kotosub_url'] != null) {
-        await prefs.setString('kotosub_url', decoded['kotosub_url'].toString());
-      }
-      if (decoded['plugin_urls'] is List) {
-        await prefs.setStringList(
-          'plugin_urls',
-          (decoded['plugin_urls'] as List).map((e) => e.toString()).toList(),
-        );
-      }
-      if (decoded['watchlist'] is List) {
-        await prefs.setString('watchlist_json', jsonEncode(decoded['watchlist']));
-      }
-      if (decoded['continue_watching'] is List) {
-        await prefs.setString(
-          'continue_watching_json',
-          jsonEncode(decoded['continue_watching']),
-        );
-      }
-
-      await _initCastex();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile "$name" restored successfully!')),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid or corrupted backup file.')),
-        );
-      }
     }
-  }
-
-  Future _askPinDialog(String expectedPin) async {
-    final pinCtrl = TextEditingController();
-    final res = await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF121216),
-        title: const Text('Enter Backup PIN'),
-        content: TextField(
-          controller: pinCtrl,
-          keyboardType: TextInputType.number,
-          maxLength: 4,
-          obscureText: true,
-          decoration: const InputDecoration(hintText: '4-digit PIN'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, pinCtrl.text.trim() == expectedPin),
-            child: const Text('Verify'),
-          ),
-        ],
-      ),
-    );
-    return res == true;
   }
 
   void _showNotificationDialog() async {
@@ -1677,14 +1770,14 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
                     ),
                   ),
                   onPressed: _exportBackupFile,
-                  icon: const Icon(Icons.upload_file_rounded, size: 19),
+                  icon: const Icon(Icons.upload_file_rounded, size: 18),
                   label: const Text(
-                    'Export Backup',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    'Export File',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
@@ -1695,11 +1788,39 @@ class _CastexHomeShellState extends State<CastexHomeShell> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: _restoreBackupFile,
-                  icon: const Icon(Icons.restore_page_rounded, size: 19),
+                  onPressed: _copyBackupJson,
+                  icon: const Icon(Icons.copy_rounded, size: 17),
                   label: const Text(
-                    'Restore File',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    'Copy JSON',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    showCastexRestoreSheet(context, () async {
+                      await _initCastex();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Profile restored successfully!')),
+                        );
+                      }
+                    });
+                  },
+                  icon: const Icon(Icons.restore_page_rounded, size: 18),
+                  label: const Text(
+                    'Restore',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
                   ),
                 ),
               ),
