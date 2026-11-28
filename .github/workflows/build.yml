@@ -29,7 +29,6 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Generate Android Project Files
@@ -39,7 +38,6 @@ jobs:
           flutter create --org com.castex --project-name castex --platforms android .
           mv pubspec.yaml.bak pubspec.yaml
           mv main.dart.bak lib/main.dart
-          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
 
       - name: Apply Custom Castex Launcher Icon
