@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+
+typedef JsonMap = Map<String,dynamic>;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -111,7 +112,7 @@ class CastexAppearance {
     }
   }
 
-  Map<String, dynamic> toJson() => {
+  JsonMap toJson() => {
         'accentHex': accentHex,
         'amoledBlack': amoledBlack,
         'glassSurface': glassSurface,
@@ -132,7 +133,7 @@ class CastexAppearance {
         'subBgOpacity': subBgOpacity,
       };
 
-  factory CastexAppearance.fromJson(Map<String, dynamic>? json) {
+  factory CastexAppearance.fromJson(JsonMap? json) {
     if (json == null) return CastexAppearance();
     return CastexAppearance(
       accentHex: json['accentHex']?.toString() ?? '#E50914',
@@ -216,7 +217,7 @@ class UserProfile {
   String name;
   int avatarIndex;
   String customAvatarUrl;
-  String pin; // Empty or 4-digit PIN
+  String pin;
   bool simpleModeOnly;
 
   UserProfile({
@@ -228,7 +229,7 @@ class UserProfile {
     this.simpleModeOnly = false,
   });
 
-  Map<String, dynamic> toJson() => {
+  JsonMap toJson() => {
         'id': id,
         'name': name,
         'avatarIndex': avatarIndex,
@@ -237,7 +238,7 @@ class UserProfile {
         'simpleModeOnly': simpleModeOnly,
       };
 
-  factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
+  factory UserProfile.fromJson(JsonMap json) => UserProfile(
         id: json['id']?.toString() ?? 'p1',
         name: json['name']?.toString() ?? 'Viewer',
         avatarIndex: (json['avatarIndex'] as num?)?.toInt() ?? 0,
@@ -247,28 +248,35 @@ class UserProfile {
       );
 }
 
+class AvatarPreset {
+  final IconData icon;
+  final int c1;
+  final int c2;
+  const AvatarPreset(this.icon, this.c1, this.c2);
+}
+
 class BuiltInAvatars {
-  static const List> items = [
-    {'icon': Icons.bolt_rounded, 'c1': 0xFFE50914, 'c2': 0xFF7F0000},
-    {'icon': Icons.auto_awesome, 'c1': 0xFF00D4FF, 'c2': 0xFF0052D4},
-    {'icon': Icons.local_fire_department, 'c1': 0xFFFF512F, 'c2': 0xFFDD2476},
-    {'icon': Icons.nightlight_round, 'c1': 0xFF7F00FF, 'c2': 0xFFE100FF},
-    {'icon': Icons.shield_moon_rounded, 'c1': 0xFF11998E, 'c2': 0xFF38EF7D},
-    {'icon': Icons.pets_rounded, 'c1': 0xFFF7971E, 'c2': 0xFFFFD200},
-    {'icon': Icons.rocket_launch_rounded, 'c1': 0xFF3A7BD5, 'c2': 0xFF00D2FF},
-    {'icon': Icons.sports_esports_rounded, 'c1': 0xFF8E2DE2, 'c2': 0xFF4A00E0},
-    {'icon': Icons.visibility_rounded, 'c1': 0xFFCB2D3E, 'c2': 0xFFEF473A},
-    {'icon': Icons.cruelty_free_rounded, 'c1': 0xFFEC008C, 'c2': 0xFFFC6767},
-    {'icon': Icons.whatshot_rounded, 'c1': 0xFFF12711, 'c2': 0xFFF5AF19},
-    {'icon': Icons.ac_unit_rounded, 'c1': 0xFF56CCF2, 'c2': 0xFF2F80ED},
-    {'icon': Icons.catching_pokemon, 'c1': 0xFFFF416C, 'c2': 0xFFFF4B2B},
-    {'icon': Icons.cyclone_rounded, 'c1': 0xFF00B4DB, 'c2': 0xFF0083B0},
-    {'icon': Icons.diamond_rounded, 'c1': 0xFFDA22FF, 'c2': 0xFF9733EE},
-    {'icon': Icons.eco_rounded, 'c1': 0xFF56AB2F, 'c2': 0xFFA8E063},
-    {'icon': Icons.flash_on_rounded, 'c1': 0xFFFFB75E, 'c2': 0xFFED8F03},
-    {'icon': Icons.headphones_rounded, 'c1': 0xFF4776E6, 'c2': 0xFF8E54E9},
-    {'icon': Icons.movie_filter_rounded, 'c1': 0xFFD31027, 'c2': 0xFFEA384D},
-    {'icon': Icons.star_rounded, 'c1': 0xFFFF8008, 'c2': 0xFFFFC837},
+  static const List<AvatarPreset> items = [
+    AvatarPreset(Icons.bolt_rounded, 0xFFE50914, 0xFF7F0000),
+    AvatarPreset(Icons.auto_awesome, 0xFF00D4FF, 0xFF0052D4),
+    AvatarPreset(Icons.local_fire_department, 0xFFFF512F, 0xFFDD2476),
+    AvatarPreset(Icons.nightlight_round, 0xFF7F00FF, 0xFFE100FF),
+    AvatarPreset(Icons.shield_moon_rounded, 0xFF11998E, 0xFF38EF7D),
+    AvatarPreset(Icons.pets_rounded, 0xFFF7971E, 0xFFFFD200),
+    AvatarPreset(Icons.rocket_launch_rounded, 0xFF3A7BD5, 0xFF00D2FF),
+    AvatarPreset(Icons.sports_esports_rounded, 0xFF8E2DE2, 0xFF4A00E0),
+    AvatarPreset(Icons.visibility_rounded, 0xFFCB2D3E, 0xFFEF473A),
+    AvatarPreset(Icons.cruelty_free_rounded, 0xFFEC008C, 0xFFFC6767),
+    AvatarPreset(Icons.whatshot_rounded, 0xFFF12711, 0xFFF5AF19),
+    AvatarPreset(Icons.ac_unit_rounded, 0xFF56CCF2, 0xFF2F80ED),
+    AvatarPreset(Icons.catching_pokemon, 0xFFFF416C, 0xFFFF4B2B),
+    AvatarPreset(Icons.cyclone_rounded, 0xFF00B4DB, 0xFF0083B0),
+    AvatarPreset(Icons.diamond_rounded, 0xFFDA22FF, 0xFF9733EE),
+    AvatarPreset(Icons.eco_rounded, 0xFF56AB2F, 0xFFA8E063),
+    AvatarPreset(Icons.flash_on_rounded, 0xFFFFB75E, 0xFFED8F03),
+    AvatarPreset(Icons.headphones_rounded, 0xFF4776E6, 0xFF8E54E9),
+    AvatarPreset(Icons.movie_filter_rounded, 0xFFD31027, 0xFFEA384D),
+    AvatarPreset(Icons.star_rounded, 0xFFFF8008, 0xFFFFC837),
   ];
 }
 
@@ -297,13 +305,13 @@ class AvatarWidget extends StatelessWidget {
         shape: BoxShape.circle,
         border: showBorder ? Border.all(color: borderColor, width: 2) : null,
         gradient: LinearGradient(
-          colors: [Color(preset['c1'] as int), Color(preset['c2'] as int)],
+          colors: [Color(preset.c1), Color(preset.c2)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: Color(preset['c1'] as int).withOpacity(0.35),
+            color: Color(preset.c1).withOpacity(0.35),
             blurRadius: 10,
           ),
         ],
@@ -314,13 +322,13 @@ class AvatarWidget extends StatelessWidget {
                 profile.customAvatarUrl.trim(),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Icon(
-                  preset['icon'] as IconData,
+                  preset.icon,
                   color: Colors.white,
                   size: size * 0.54,
                 ),
               )
             : Icon(
-                preset['icon'] as IconData,
+                preset.icon,
                 color: Colors.white,
                 size: size * 0.54,
               ),
@@ -330,13 +338,62 @@ class AvatarWidget extends StatelessWidget {
 }
 
 // ============================================================================
-// 4. MEDIA, EPISODE, STREAM & ADDON MODELS
+// 4. MEDIA, EPISODE, STREAM, QUIZ & ADDON MODELS
 // ============================================================================
+class QuizQuestion {
+  final String question;
+  final String optionA;
+  final String optionB;
+  final String optionC;
+  final String correctOption; // 'a', 'b', or 'c'
+
+  const QuizQuestion({
+    required this.question,
+    required this.optionA,
+    required this.optionB,
+    required this.optionC,
+    required this.correctOption,
+  });
+}
+
+class AppNotification {
+  final String title;
+  final String body;
+  final String time;
+
+  const AppNotification({
+    required this.title,
+    required this.body,
+    required this.time,
+  });
+}
+
+class SubtitleCue {
+  final String en;
+  final String hinglish;
+  final String bangla;
+  final String banglish;
+
+  const SubtitleCue({
+    required this.en,
+    required this.hinglish,
+    required this.bangla,
+    required this.banglish,
+  });
+
+  String byLang(String lang) {
+    if (lang == 'Bangla') return bangla;
+    if (lang == 'Banglish') return banglish;
+    if (lang == 'English') return en;
+    return hinglish;
+  }
+}
+
 class StreamSource {
   final String id;
   final String title;
-  final String quality; // 4K HDR, 1080p HEVC, 720p
-  final String dubLayer; // Original Audio, Official Dub, Community Fandub
+  final String quality;
+  final String dubLayer;
   final String language;
   final String provider;
   final String url;
@@ -361,7 +418,7 @@ class EpisodeItem {
   final String thumbnailUrl;
   final String duration;
   final double rating;
-  final String canonTag; // CANON, MIXED, FILLER
+  final String canonTag;
   final int introStartSec;
   final int introEndSec;
   final List<StreamSource> streams;
@@ -385,7 +442,7 @@ class EpisodeItem {
 class MediaItem {
   final String id;
   final String title;
-  final String type; // Anime, Movie, Series
+  final String type;
   final String year;
   final double rating;
   final int? rankToday;
@@ -398,7 +455,7 @@ class MediaItem {
   final String overview;
   final String aiRecap;
   final List<EpisodeItem> episodes;
-  final List> quizQuestions;
+  final List<QuizQuestion> quizQuestions;
 
   const MediaItem({
     required this.id,
@@ -424,7 +481,7 @@ class AddonManifest {
   final String id;
   final String name;
   final String url;
-  final String type; // Stremio Addon, Fandub Pack, Catalog JSON
+  final String type;
   bool enabled;
 
   AddonManifest({
@@ -435,7 +492,7 @@ class AddonManifest {
     this.enabled = true,
   });
 
-  Map<String, dynamic> toJson() => {
+  JsonMap toJson() => {
         'id': id,
         'name': name,
         'url': url,
@@ -443,7 +500,7 @@ class AddonManifest {
         'enabled': enabled,
       };
 
-  factory AddonManifest.fromJson(Map<String, dynamic> json) => AddonManifest(
+  factory AddonManifest.fromJson(JsonMap json) => AddonManifest(
         id: json['id']?.toString() ?? DateTime.now().toString(),
         name: json['name']?.toString() ?? 'Custom Addon',
         url: json['url']?.toString() ?? '',
@@ -453,7 +510,7 @@ class AddonManifest {
 }
 
 // ============================================================================
-// 5. CURATED BUILT-IN SHOWCASE CATALOG (INSTANT PLAY + STREMIO COMPATIBLE)
+// 5. CURATED BUILT-IN SHOWCASE CATALOG
 // ============================================================================
 class CastexCatalog {
   static const String _stream1080 =
@@ -576,20 +633,14 @@ class CastexCatalog {
         ),
       ],
       quizQuestions: [
-        {
-          'q': 'How long did Satoru Gojo activate Unlimited Void in Shibuya B5F?',
-          'a': '0.2 Seconds',
-          'b': '2.0 Seconds',
-          'c': '0.02 Seconds',
-          'ans': 'a',
-        },
-        {
-          'q': 'Which cursed object was used to trap Gojo in Shibuya?',
-          'a': 'Inverted Spear of Heaven',
-          'b': 'Prison Realm',
-          'c': 'Playful Cloud',
-          'ans': 'b',
-        },
+        QuizQuestion(
+          question:
+              'How long did Satoru Gojo activate Unlimited Void in Shibuya B5F?',
+          optionA: '0.2 Seconds',
+          optionB: '2.0 Seconds',
+          optionC: '0.02 Seconds',
+          correctOption: 'a',
+        ),
       ],
     ),
     MediaItem(
@@ -647,13 +698,13 @@ class CastexCatalog {
         ),
       ],
       quizQuestions: [
-        {
-          'q': 'Which European city serves as the setting for Tears of Steel?',
-          'a': 'Tokyo',
-          'b': 'Amsterdam',
-          'c': 'Berlin',
-          'ans': 'b',
-        },
+        QuizQuestion(
+          question: 'Which European city serves as the setting for Tears of Steel?',
+          optionA: 'Tokyo',
+          optionB: 'Amsterdam',
+          optionC: 'Berlin',
+          correctOption: 'b',
+        ),
       ],
     ),
     MediaItem(
@@ -702,13 +753,13 @@ class CastexCatalog {
         ),
       ],
       quizQuestions: [
-        {
-          'q': 'What is the name of the baby dragon Sintel searches for?',
-          'a': 'Scales',
-          'b': 'Ignis',
-          'c': 'Draco',
-          'ans': 'a',
-        },
+        QuizQuestion(
+          question: 'What is the name of the baby dragon Sintel searches for?',
+          optionA: 'Scales',
+          optionB: 'Ignis',
+          optionC: 'Draco',
+          correctOption: 'a',
+        ),
       ],
     ),
     MediaItem(
@@ -757,13 +808,13 @@ class CastexCatalog {
         ),
       ],
       quizQuestions: [
-        {
-          'q': 'What phenomenon threatens to collapse the timelines?',
-          'a': 'Incursions',
-          'b': 'Solar Flares',
-          'c': 'Wormhole Drift',
-          'ans': 'a',
-        },
+        QuizQuestion(
+          question: 'What phenomenon threatens to collapse the timelines?',
+          optionA: 'Incursions',
+          optionB: 'Solar Flares',
+          optionC: 'Wormhole Drift',
+          correctOption: 'a',
+        ),
       ],
     ),
   ];
@@ -775,7 +826,6 @@ class CastexCatalog {
 class CastexController extends ChangeNotifier {
   late SharedPreferences _prefs;
 
-  // Auth State
   String? uid;
   String? email;
   String? idToken;
@@ -783,7 +833,6 @@ class CastexController extends ChangeNotifier {
   bool isSyncing = false;
   String syncStatus = 'Offline Local';
 
-  // App State
   CastexAppearance appearance = CastexAppearance();
   List<UserProfile> profiles = [
     UserProfile(id: 'p_main', name: 'Main Viewer', avatarIndex: 0),
@@ -821,19 +870,19 @@ class CastexController extends ChangeNotifier {
     ),
   ];
 
-  final List> notifications = [
-    {
-      'title': 'Castex v1.0.0 Flagship Live',
-      'body':
+  final List<AppNotification> notifications = const [
+    AppNotification(
+      title: 'Castex v1.0.0 Flagship Live',
+      body:
           'Liquid Glass UI, Firebase Cloud Sync, KotoSub Dual Subtitles & Hybrid Dub Router active.',
-      'time': 'Just now',
-    },
-    {
-      'title': 'Cloudflare DNS Bypass Active',
-      'body':
+      time: 'Just now',
+    ),
+    AppNotification(
+      title: 'Cloudflare DNS Bypass Active',
+      body:
           'ISP-blocked Stremio addons now route via Cloudflare 1.1.1.1 DoH automatically.',
-      'time': 'Today',
-    },
+      time: 'Today',
+    ),
   ];
 
   bool get isLoggedIn =>
@@ -860,7 +909,6 @@ class CastexController extends ChangeNotifier {
       if (activeProfile.pin.length == 4) {
         profileUnlocked = false;
       }
-      // Refresh token & pull cloud data in background so app opens instantaneously
       unawaited(_refreshSessionAndPullCloud());
     }
   }
@@ -868,13 +916,15 @@ class CastexController extends ChangeNotifier {
   void _loadLocalState() {
     final rawApp = _prefs.getString('cx_appearance');
     if (rawApp != null) {
-      appearance = CastexAppearance.fromJson(jsonDecode(rawApp));
+      appearance = CastexAppearance.fromJson(jsonDecode(rawApp) as JsonMap);
     }
     final rawProfiles = _prefs.getString('cx_profiles');
     if (rawProfiles != null) {
       final list = jsonDecode(rawProfiles) as List;
       if (list.isNotEmpty) {
-        profiles = list.map((e) => UserProfile.fromJson(e)).toList();
+        profiles = list
+            .map((e) => UserProfile.fromJson(JsonMap.from(e as Map)))
+            .toList();
       }
     }
     activeProfileId = _prefs.getString('cx_active_profile') ?? profiles.first.id;
@@ -887,13 +937,13 @@ class CastexController extends ChangeNotifier {
 
     final rawProg = _prefs.getString('cx_progress');
     if (rawProg != null) {
-      final map = jsonDecode(rawProg) as Map<String, dynamic>;
+      final map = jsonDecode(rawProg) as JsonMap;
       watchProgress = map.map((k, v) => MapEntry(k, (v as num).toDouble()));
     }
 
     final rawGenre = _prefs.getString('cx_genre_mins');
     if (rawGenre != null) {
-      final map = jsonDecode(rawGenre) as Map<String, dynamic>;
+      final map = jsonDecode(rawGenre) as JsonMap;
       genreMinutes = map.map((k, v) => MapEntry(k, (v as num).toInt()));
     }
 
@@ -902,13 +952,15 @@ class CastexController extends ChangeNotifier {
         (_prefs.getStringList('cx_completed80') ?? []).toSet();
     quizClaimedIds =
         (_prefs.getStringList('cx_quiz_claimed') ?? []).toSet();
-    unlockedBadges = _prefs.getStringList('cx_badges') ??
-        ['Early Flagship Builder'];
+    unlockedBadges =
+        _prefs.getStringList('cx_badges') ?? ['Early Flagship Builder'];
 
     final rawAddons = _prefs.getString('cx_addons');
     if (rawAddons != null) {
       final list = jsonDecode(rawAddons) as List;
-      addons = list.map((e) => AddonManifest.fromJson(e)).toList();
+      addons = list
+          .map((e) => AddonManifest.fromJson(JsonMap.from(e as Map)))
+          .toList();
     }
   }
 
@@ -939,7 +991,7 @@ class CastexController extends ChangeNotifier {
     );
   }
 
-  Map<String, dynamic> _buildFullStatePayload() => {
+  JsonMap _buildFullStatePayload() => {
         'email': email,
         'updatedAt': DateTime.now().toIso8601String(),
         'appearance': appearance.toJson(),
@@ -956,15 +1008,15 @@ class CastexController extends ChangeNotifier {
         'addons': addons.map((e) => e.toJson()).toList(),
       };
 
-  void _applyCloudPayload(Map<String, dynamic> data) {
+  void _applyCloudPayload(JsonMap data) {
     if (data['appearance'] is Map) {
       appearance = CastexAppearance.fromJson(
-        Map<String, dynamic>.from(data['appearance']),
+        JsonMap.from(data['appearance'] as Map),
       );
     }
     if (data['profiles'] is List && (data['profiles'] as List).isNotEmpty) {
       profiles = (data['profiles'] as List)
-          .map((e) => UserProfile.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) => UserProfile.fromJson(JsonMap.from(e as Map)))
           .toList();
     }
     if (data['activeProfileId'] != null) {
@@ -979,11 +1031,11 @@ class CastexController extends ChangeNotifier {
           (data['offlinePocketIds'] as List).map((e) => e.toString()).toSet();
     }
     if (data['watchProgress'] is Map) {
-      final m = Map<String, dynamic>.from(data['watchProgress']);
+      final m = JsonMap.from(data['watchProgress'] as Map);
       watchProgress = m.map((k, v) => MapEntry(k, (v as num).toDouble()));
     }
     if (data['genreMinutes'] is Map) {
-      final m = Map<String, dynamic>.from(data['genreMinutes']);
+      final m = JsonMap.from(data['genreMinutes'] as Map);
       genreMinutes = m.map((k, v) => MapEntry(k, (v as num).toInt()));
     }
     if (data['totalWatchMinutes'] != null) {
@@ -1003,12 +1055,11 @@ class CastexController extends ChangeNotifier {
     }
     if (data['addons'] is List) {
       addons = (data['addons'] as List)
-          .map((e) => AddonManifest.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) => AddonManifest.fromJson(JsonMap.from(e as Map)))
           .toList();
     }
   }
 
-  // Firebase Email/Password Auth
   Future<String?> authenticateEmail({
     required String userEmail,
     required String password,
@@ -1028,7 +1079,7 @@ class CastexController extends ChangeNotifier {
           'returnSecureToken': true,
         }),
       );
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final body = jsonDecode(res.body) as JsonMap;
       if (res.statusCode != 200) {
         final msg = body['error']?['message']?.toString() ?? 'Auth failed';
         return _friendlyFirebaseError(msg);
@@ -1048,7 +1099,7 @@ class CastexController extends ChangeNotifier {
       }
       notifyListeners();
       return null;
-    } catch (e) {
+    } catch (_) {
       return 'Network error: Check internet connection.';
     }
   }
@@ -1066,7 +1117,7 @@ class CastexController extends ChangeNotifier {
         }),
       );
       if (res.statusCode == 200) return null;
-      final body = jsonDecode(res.body);
+      final body = jsonDecode(res.body) as JsonMap;
       return _friendlyFirebaseError(
         body['error']?['message']?.toString() ?? 'Could not send reset email',
       );
@@ -1101,7 +1152,7 @@ class CastexController extends ChangeNotifier {
         body: 'grant_type=refresh_token&refresh_token=$refreshToken',
       );
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = jsonDecode(res.body) as JsonMap;
         idToken = data['id_token']?.toString();
         refreshToken = data['refresh_token']?.toString();
         uid = data['user_id']?.toString() ?? uid;
@@ -1123,7 +1174,7 @@ class CastexController extends ChangeNotifier {
           '${CastexConfig.firebaseDbUrl}/users/$uid.json?auth=$idToken';
       final res = await http.get(Uri.parse(url));
       if (res.statusCode == 200 && res.body != 'null') {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final data = jsonDecode(res.body) as JsonMap;
         _applyCloudPayload(data);
         await _saveLocalImmediately();
         syncStatus = 'Cloud Synced';
@@ -1170,7 +1221,6 @@ class CastexController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // State Mutators (All immediately persist locally + sync to Firebase)
   void toggleWatchlist(String mediaId) {
     if (watchlistIds.contains(mediaId)) {
       watchlistIds.remove(mediaId);
@@ -1269,7 +1319,7 @@ class CastexController extends ChangeNotifier {
   }
 
   String exportBackupJson({required bool includeSensitive}) {
-    final map = <String, dynamic>{
+    final JsonMap map = {
       'castexBackupVersion': CastexConfig.appVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'appearance': appearance.toJson(),
@@ -1297,7 +1347,7 @@ class CastexController extends ChangeNotifier {
 
   bool importBackupJson(String raw) {
     try {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final data = jsonDecode(raw) as JsonMap;
       _applyCloudPayload(data);
       unawaited(pushCloudSync());
       return true;
@@ -1306,7 +1356,6 @@ class CastexController extends ChangeNotifier {
     }
   }
 
-  // Cloudflare DoH (1.1.1.1) Resolver for ISP-Blocked Addons
   Future<String> testCloudflareDoh(String hostname) async {
     try {
       final uri = Uri.parse(
@@ -1317,7 +1366,7 @@ class CastexController extends ChangeNotifier {
         headers: {'Accept': 'application/dns-json'},
       );
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = jsonDecode(res.body) as JsonMap;
         final answers = data['Answer'] as List?;
         if (answers != null && answers.isNotEmpty) {
           return 'Cloudflare 1.1.1.1 Resolved: ${answers.first['data']}';
@@ -1432,7 +1481,7 @@ class LiquidGlassCard extends StatelessWidget {
 }
 
 // ============================================================================
-// 8. FIREBASE EMAIL + PASSWORD LOGIN & SIGNUP GATE (ZERO SESSION LOSS)
+// 8. FIREBASE EMAIL + PASSWORD LOGIN & SIGNUP GATE
 // ============================================================================
 class AuthGateScreen extends StatefulWidget {
   final CastexController controller;
@@ -1663,7 +1712,7 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
 }
 
 // ============================================================================
-// 9. PROFILE 4-DIGIT PIN GATE ("WHO'S WATCHING?")
+// 9. PROFILE 4-DIGIT PIN GATE
 // ============================================================================
 class ProfilePinGateScreen extends StatefulWidget {
   final CastexController controller;
@@ -1823,13 +1872,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     color: widget.controller.appearance.accentColor,
                   ),
                 ),
-                title: Text(n['title'] ?? ''),
+                title: Text(n.title),
                 subtitle: Text(
-                  n['body'] ?? '',
+                  n.body,
                   style: const TextStyle(color: Colors.white60, fontSize: 12),
                 ),
                 trailing: Text(
-                  n['time'] ?? '',
+                  n.time,
                   style: const TextStyle(color: Colors.white38, fontSize: 11),
                 ),
               ),
@@ -1849,7 +1898,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
       backgroundColor: app.bgColor,
       body: Stack(
         children: [
-          // Adaptive Poster Aura Ambient Glow
           AnimatedContainer(
             duration: const Duration(milliseconds: 600),
             height: 360,
@@ -1864,13 +1912,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
             ),
           ),
-
-          // Main Content
           SafeArea(
             bottom: false,
             child: Column(
               children: [
-                // Top Glass Header
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1905,7 +1950,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         ),
                       ),
                       const Spacer(),
-                      // Simple vs Fan Mode Quick Pill
                       GestureDetector(
                         onTap: () => widget.controller.updateAppearance(
                           (a) => a.fanMode = !a.fanMode,
@@ -1973,8 +2017,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     ],
                   ),
                 ),
-
-                // Active Tab Body
                 Expanded(
                   child: IndexedStack(
                     index: _tabIndex,
@@ -1997,8 +2039,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ],
             ),
           ),
-
-          // Floating Liquid Glass Pill Dock
           Positioned(
             left: 0,
             right: 0,
@@ -2016,12 +2056,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
     final compact = app.dockMode == 'Compact' ||
         (app.dockMode == 'Adaptive' && _dockCompact);
 
-    final navItems = [
-      {'icon': Icons.home_rounded, 'label': 'Home'},
-      {'icon': Icons.search_rounded, 'label': 'Search'},
-      {'icon': Icons.bookmarks_rounded, 'label': 'Library'},
-      {'icon': Icons.person_rounded, 'label': 'Profile'},
+    const icons = [
+      Icons.home_rounded,
+      Icons.search_rounded,
+      Icons.bookmarks_rounded,
+      Icons.person_rounded,
     ];
+    const labels = ['Home', 'Search', 'Library', 'Profile'];
 
     return LiquidGlassCard(
       appearance: app,
@@ -2032,7 +2073,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: List.generate(navItems.length, (i) {
+        children: List.generate(icons.length, (i) {
           final selected = _tabIndex == i;
           final isProfile = i == 3;
           return GestureDetector(
@@ -2069,14 +2110,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     )
                   else
                     Icon(
-                      navItems[i]['icon'] as IconData,
+                      icons[i],
                       size: selected ? 23 : 21,
                       color: selected ? Colors.white : Colors.white60,
                     ),
                   if (selected && !compact) ...[
                     const SizedBox(width: 7),
                     Text(
-                      navItems[i]['label'] as String,
+                      labels[i],
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12.5,
@@ -2094,7 +2135,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
 }
 
 // ============================================================================
-// 11. HOME TAB (HERO SPOTLIGHT, RANKED POSTERS, CONTINUE WATCHING, STUDIOS)
+// 11. HOME TAB
 // ============================================================================
 class HomeTab extends StatelessWidget {
   final CastexController controller;
@@ -2126,7 +2167,6 @@ class HomeTab extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
         children: [
-          // Hero Spotlight Card
           GestureDetector(
             onTap: () {
               onAuraChanged(hero.auraColor);
@@ -2278,8 +2318,6 @@ class HomeTab extends StatelessWidget {
               ),
             ),
           ),
-
-          // Continue Watching Section
           if (continueList.isNotEmpty) ...[
             const SizedBox(height: 22),
             const Text(
@@ -2369,8 +2407,6 @@ class HomeTab extends StatelessWidget {
               ),
             ),
           ],
-
-          // Streaming Services & Studios Hub
           const SizedBox(height: 22),
           const Text(
             'Studios & Dub Hubs',
@@ -2381,7 +2417,13 @@ class HomeTab extends StatelessWidget {
             height: 44,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: ['Crunchyroll', 'Netflix', 'Marvel', 'Muse India', 'Fandub Hub']
+              children: [
+                'Crunchyroll',
+                'Netflix',
+                'Marvel',
+                'Muse India',
+                'Fandub Hub',
+              ]
                   .map(
                     (studio) => Container(
                       margin: const EdgeInsets.only(right: 10),
@@ -2404,8 +2446,6 @@ class HomeTab extends StatelessWidget {
                   .toList(),
             ),
           ),
-
-          // Ranked Trending Row
           const SizedBox(height: 22),
           const Text(
             'Top Ranked Today',
@@ -2532,7 +2572,7 @@ class HomeTab extends StatelessWidget {
 }
 
 // ============================================================================
-// 12. SEARCH TAB (INSTANT CATALOG + GENRE FILTERS)
+// 12. SEARCH TAB
 // ============================================================================
 class SearchTab extends StatefulWidget {
   final CastexController controller;
@@ -2631,7 +2671,7 @@ class _SearchTabState extends State<SearchTab> {
 }
 
 // ============================================================================
-// 13. LIBRARY TAB (SAVED, OFFLINE POCKET, COLLECTIONS)
+// 13. LIBRARY TAB
 // ============================================================================
 class LibraryTab extends StatefulWidget {
   final CastexController controller;
@@ -2642,7 +2682,7 @@ class LibraryTab extends StatefulWidget {
 }
 
 class _LibraryTabState extends State<LibraryTab> {
-  int _subTab = 0; // 0 = Saved, 1 = Offline Pocket, 2 = Collections
+  int _subTab = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -2795,7 +2835,7 @@ class _LibraryTabState extends State<LibraryTab> {
 }
 
 // ============================================================================
-// 14. PROFILE DASHBOARD, TASTE DNA, FAN QUIZ & GROUPED NUVIO-GRADE SETTINGS
+// 14. PROFILE DASHBOARD, TASTE DNA, FAN QUIZ & GROUPED SETTINGS
 // ============================================================================
 class ProfileAndSettingsTab extends StatefulWidget {
   final CastexController controller;
@@ -2982,7 +3022,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  // Preset Color Swatches
                   Wrap(
                     spacing: 10,
                     children: [
@@ -3214,38 +3253,43 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(q['q'] ?? ''),
+            Text(q.question),
             const SizedBox(height: 14),
-            ...['a', 'b', 'c'].map((opt) {
-              return ListTile(
-                title: Text(q[opt] ?? ''),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  if (opt == q['ans']) {
-                    widget.controller.claimQuizReward(
-                      item.id,
-                      '${item.studio} Master',
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Correct! Unlocked "${item.studio} Master" Badge!',
-                        ),
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Wrong answer! Try another title.'),
-                      ),
-                    );
-                  }
-                },
-              );
-            }),
+            _quizOptTile(ctx, item, 'a', q.optionA, q.correctOption),
+            _quizOptTile(ctx, item, 'b', q.optionB, q.correctOption),
+            _quizOptTile(ctx, item, 'c', q.optionC, q.correctOption),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _quizOptTile(BuildContext ctx, MediaItem item, String key, String text,
+      String correct) {
+    return ListTile(
+      title: Text(text),
+      onTap: () {
+        Navigator.pop(ctx);
+        if (key == correct) {
+          widget.controller.claimQuizReward(
+            item.id,
+            '${item.studio} Master',
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Correct! Unlocked "${item.studio} Master" Badge!',
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Wrong answer! Try another title.'),
+            ),
+          );
+        }
+      },
     );
   }
 
@@ -3460,7 +3504,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
       children: [
-        // Profile Header Card
         LiquidGlassCard(
           appearance: app,
           padding: const EdgeInsets.all(16),
@@ -3528,7 +3571,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
                 ],
               ),
               const SizedBox(height: 14),
-              // Multi-Profile Switcher Row
               SizedBox(
                 height: 36,
                 child: ListView(
@@ -3558,10 +3600,7 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             ],
           ),
         ),
-
         const SizedBox(height: 14),
-
-        // Stats + Taste DNA Ring Card
         LiquidGlassCard(
           appearance: app,
           padding: const EdgeInsets.all(16),
@@ -3613,8 +3652,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             ],
           ),
         ),
-
-        // Fan Mode -> Game -> Quiz Card
         if (widget.controller.effectiveFanMode) ...[
           const SizedBox(height: 14),
           ListTile(
@@ -3634,7 +3671,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             onTap: _openFanQuizHub,
           ),
         ],
-
         const SizedBox(height: 18),
         const Text(
           'Settings & Studio',
@@ -3655,7 +3691,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
           ),
         ),
         const SizedBox(height: 12),
-
         if (_matches('appearance glass color hsb theme dock preset'))
           _settingTile(
             icon: Icons.palette_rounded,
@@ -3665,7 +3700,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             onTap: _openAppearanceStudio,
             app: app,
           ),
-
         if (_matches('spoiler shield layout unwatched blur'))
           SwitchListTile(
             tileColor: app.cardColor,
@@ -3681,9 +3715,7 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             onChanged: (v) =>
                 widget.controller.updateAppearance((a) => a.spoilerShield = v),
           ),
-
         const SizedBox(height: 8),
-
         if (_matches('kotosub playback subtitle language dual'))
           _settingTile(
             icon: Icons.subtitles_rounded,
@@ -3699,7 +3731,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             },
             app: app,
           ),
-
         if (_matches('addons stremio cloudflare dns bypass'))
           _settingTile(
             icon: Icons.extension_rounded,
@@ -3709,7 +3740,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             onTap: _openAddonsManager,
             app: app,
           ),
-
         if (_matches('backup restore json export'))
           _settingTile(
             icon: Icons.backup_rounded,
@@ -3718,7 +3748,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             onTap: _openBackupRestoreSheet,
             app: app,
           ),
-
         if (_matches('sync cloud firebase'))
           _settingTile(
             icon: Icons.cloud_sync_rounded,
@@ -3727,7 +3756,6 @@ class _ProfileAndSettingsTabState extends State<ProfileAndSettingsTab> {
             onTap: () => widget.controller.pullCloudSync(),
             app: app,
           ),
-
         const SizedBox(height: 10),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
@@ -3789,7 +3817,10 @@ class TasteDnaPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final total = genreMinutes.values.fold<int>(0, (a, b) => a + b);
+    int total = 0;
+    for (final v in genreMinutes.values) {
+      total += v;
+    }
     if (total == 0) return;
 
     const palette = [
@@ -3823,7 +3854,7 @@ class TasteDnaPainter extends CustomPainter {
 }
 
 // ============================================================================
-// 15. DETAIL SCREEN (SPOILER SHIELD, AI RECAP, CANON/FILLER, STREAM PICKER)
+// 15. DETAIL SCREEN
 // ============================================================================
 class MediaDetailScreen extends StatefulWidget {
   final CastexController controller;
@@ -4172,7 +4203,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // ============================================================================
-// 16. FULLSCREEN CINEMA PLAYER (KOTOSUB DUAL SUBS, HYBRID DUB, 2X HOLD, ANISKIP)
+// 16. FULLSCREEN CINEMA PLAYER
 // ============================================================================
 class CastexCinemaPlayerScreen extends StatefulWidget {
   final CastexController controller;
@@ -4203,26 +4234,25 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
   double _subOffsetSec = 0.0;
   String? _errorText;
 
-  // Built-in KotoSub Sync Lines (0.000s timestamp aligned)
-  static const List> _kotoSubSampleCue = [
-    {
-      'en': 'Domain Expansion: Unlimited Void!',
-      'Hinglish': 'Domain Expansion: Unlimited Void — ab koi bach nahi sakta!',
-      'Bangla': 'ডোমেইন এক্সপ্যানশন: আনলিমিটেড ভয়েড — এখন আর কেউ পালাতে পারবে না!',
-      'Banglish': 'Domain Expansion: Unlimited Void — ekhon ar keu palate parbe na!',
-    },
-    {
-      'en': 'Hold the line! The barrier is collapsing!',
-      'Hinglish': 'Line pakad ke rakho! Barrier tootne wala hai!',
-      'Bangla': 'লাইন ধরে রাখো! ব্যারিয়ার এখনই ভেঙে পড়বে!',
-      'Banglish': 'Line dhore rakho! Barrier ekhoni bhenge porbe!',
-    },
-    {
-      'en': 'Castex KotoSub AI synced at 0.000s latency.',
-      'Hinglish': 'Castex KotoSub AI 0.000s sync mein live chal raha hai.',
-      'Bangla': 'Castex KotoSub AI ০.০০০ সেকেন্ড সিঙ্কে লাইভ চলছে।',
-      'Banglish': 'Castex KotoSub AI 0.000s sync-e live cholche.',
-    },
+  static const List<SubtitleCue> _kotoSubSampleCue = [
+    SubtitleCue(
+      en: 'Domain Expansion: Unlimited Void!',
+      hinglish: 'Domain Expansion: Unlimited Void — ab koi bach nahi sakta!',
+      bangla: 'ডোমেইন এক্সপ্যানশন: আনলিমিটেড ভয়েড — এখন আর কেউ পালাতে পারবে না!',
+      banglish: 'Domain Expansion: Unlimited Void — ekhon ar keu palate parbe na!',
+    ),
+    SubtitleCue(
+      en: 'Hold the line! The barrier is collapsing!',
+      hinglish: 'Line pakad ke rakho! Barrier tootne wala hai!',
+      bangla: 'লাইন ধরে রাখো! ব্যারিয়ার এখনই ভেঙে পড়বে!',
+      banglish: 'Line dhore rakho! Barrier ekhoni bhenge porbe!',
+    ),
+    SubtitleCue(
+      en: 'Castex KotoSub AI synced at 0.000s latency.',
+      hinglish: 'Castex KotoSub AI 0.000s sync mein live chal raha hai.',
+      bangla: 'Castex KotoSub AI ০.০০০ সেকেন্ড সিঙ্কে লাইভ চলছে।',
+      banglish: 'Castex KotoSub AI 0.000s sync-e live cholche.',
+    ),
   ];
 
   @override
@@ -4327,7 +4357,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Video Surface
             Center(
               child: _errorText != null
                   ? Text(_errorText!,
@@ -4339,8 +4368,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                         )
                       : CircularProgressIndicator(color: app.accentColor),
             ),
-
-            // Double Tap Zones (-10s Left / +10s Right)
             Row(
               children: [
                 Expanded(
@@ -4357,8 +4384,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                 ),
               ],
             ),
-
-            // Hold-to-2x Speed Pill
             if (_isFast2x)
               Positioned(
                 top: 24,
@@ -4379,8 +4404,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                   ),
                 ),
               ),
-
-            // KotoSub AI Dual Subtitles Overlay
             if (_subLang != 'Off')
               Positioned(
                 left: 36,
@@ -4398,7 +4421,7 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          currentCue[_subLang] ?? currentCue['Hinglish']!,
+                          currentCue.byLang(_subLang),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: app.subFontSize,
@@ -4410,7 +4433,7 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 3),
                             child: Text(
-                              currentCue['en']!,
+                              currentCue.en,
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: app.subFontSize * 0.78,
@@ -4423,8 +4446,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                   ),
                 ),
               ),
-
-            // AniSkip Intro Button
             if (showAniSkip)
               Positioned(
                 right: 24,
@@ -4443,10 +4464,7 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                   label: const Text('Skip Intro (AniSkip)'),
                 ),
               ),
-
-            // Cinema HUD Controls
             if (_showControls) ...[
-              // Top Bar: Back + Title + Hybrid Dub Router + KotoSub Selector
               Positioned(
                 top: 12,
                 left: 16,
@@ -4474,7 +4492,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                         ],
                       ),
                     ),
-                    // 3-Layer Hybrid Dub Switcher Pill
                     PopupMenuButton<String>(
                       onSelected: (layer) =>
                           setState(() => _activeDubLayer = layer),
@@ -4496,7 +4513,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // KotoSub Language & Offset Pill
                     PopupMenuButton<String>(
                       onSelected: (val) {
                         if (val == '+0.5') {
@@ -4536,8 +4552,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                   ],
                 ),
               ),
-
-              // Center Play/Pause
               Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -4573,8 +4587,6 @@ class _CastexCinemaPlayerScreenState extends State<CastexCinemaPlayerScreen> {
                   ],
                 ),
               ),
-
-              // Bottom Timeline Scrubber
               Positioned(
                 left: 20,
                 right: 20,
