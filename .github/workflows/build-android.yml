@@ -33,33 +33,21 @@ jobs:
         run: |
           mkdir -p ~/.gradle/init.d
           cat << 'EOF' > ~/.gradle/init.d/mirror.gradle.kts
-          fun RepositoryHandler.redirectMavenCentral() {
-              all {
-                  if (this is MavenArtifactRepository) {
-                      val u = this.url.toString()
-                      if (u.startsWith("https://repo.maven.apache.org/maven2") ||
-                          u.startsWith("http://repo.maven.apache.org/maven2")) {
-                          setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
-                      }
-                  }
-              }
-          }
-
           beforeSettings {
               pluginManagement {
                   repositories {
                       maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
                       google()
                       gradlePluginPortal()
+                      mavenCentral()
                   }
-                  repositories.redirectMavenCentral()
               }
               dependencyResolutionManagement {
                   repositories {
                       maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
                       google()
+                      mavenCentral()
                   }
-                  repositories.redirectMavenCentral()
               }
           }
 
@@ -69,14 +57,14 @@ jobs:
                       maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
                       google()
                       gradlePluginPortal()
+                      mavenCentral()
                   }
-                  repositories.redirectMavenCentral()
               }
               repositories {
                   maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
                   google()
+                  mavenCentral()
               }
-              repositories.redirectMavenCentral()
           }
           EOF
 
@@ -85,6 +73,19 @@ jobs:
           systemProp.http.keepAlive=true
           systemProp.http.maxConnections=4
           EOF
+
+      - name: Repair Android Project & Keep Castex Code
+        working-directory: app
+        run: |
+          mkdir -p /tmp/castex_backup
+          cp -r lib /tmp/castex_backup/lib
+          cp pubspec.yaml /tmp/castex_backup/pubspec.yaml
+          rm -rf android
+          flutter create . --platforms=android --org com.castex.app --project-name castex
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          rm -rf lib
+          cp -r /tmp/castex_backup/lib lib
+          cp /tmp/castex_backup/pubspec.yaml pubspec.yaml
 
       - name: Install Flutter Dependencies
         working-directory: app
