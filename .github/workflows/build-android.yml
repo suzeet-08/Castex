@@ -29,41 +29,39 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Configure Unlimited Maven Central Mirror (Fix HTTP 429)
+      - name: Configure Unlimited Maven Central Mirror (Fix HTTP 429 & Gradle 8)
         run: |
           mkdir -p ~/.gradle/init.d
           cat << 'EOF' > ~/.gradle/init.d/mirror.gradle.kts
-          beforeSettings {
+          gradle.settingsEvaluated {
               pluginManagement {
-                  repositories {
-                      maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
-                      google()
-                      gradlePluginPortal()
-                      mavenCentral()
+                  repositories.withType(MavenArtifactRepository::class.java).configureEach {
+                      if (url.toString().contains("repo.maven.apache.org")) {
+                          setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
                   }
               }
               dependencyResolutionManagement {
-                  repositories {
-                      maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
-                      google()
-                      mavenCentral()
+                  repositories.withType(MavenArtifactRepository::class.java).configureEach {
+                      if (url.toString().contains("repo.maven.apache.org")) {
+                          setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
                   }
               }
           }
 
-          allprojects {
+          gradle.allprojects {
               buildscript {
-                  repositories {
-                      maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
-                      google()
-                      gradlePluginPortal()
-                      mavenCentral()
+                  repositories.withType(MavenArtifactRepository::class.java).configureEach {
+                      if (url.toString().contains("repo.maven.apache.org")) {
+                          setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
                   }
               }
-              repositories {
-                  maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
-                  google()
-                  mavenCentral()
+              repositories.withType(MavenArtifactRepository::class.java).configureEach {
+                  if (url.toString().contains("repo.maven.apache.org")) {
+                      setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
+                  }
               }
           }
           EOF
