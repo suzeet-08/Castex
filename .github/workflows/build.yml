@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'app/**'
+      - 'assets/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
@@ -44,42 +45,7 @@ jobs:
       - name: Apply Custom Castex Launcher Icon
         run: |
           python3 -m pip install --quiet Pillow
-          python3 - << 'EOF'
-          import os, glob, shutil
-          from PIL import Image, ImageDraw
-
-          src = None
-          for f in glob.glob("assets/*"):
-              if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                  src = f
-                  break
-
-          if src:
-              img = Image.open(src).convert("RGBA")
-          else:
-              img = Image.new("RGBA", (512, 512), (0, 0, 0, 255))
-              d = ImageDraw.Draw(img)
-              d.pieslice([86, 86, 426, 426], start=38, end=322, fill=(255, 255, 255, 255))
-              d.ellipse([146, 146, 366, 366], fill=(0, 0, 0, 255))
-              d.polygon([(235, 192), (235, 320), (355, 256)], fill=(229, 9, 20, 255))
-
-          for anydpi in glob.glob("android/app/src/main/res/mipmap-anydpi*"):
-              shutil.rmtree(anydpi, ignore_errors=True)
-
-          sizes = {
-              "mipmap-mdpi": 48,
-              "mipmap-hdpi": 72,
-              "mipmap-xhdpi": 96,
-              "mipmap-xxhdpi": 144,
-              "mipmap-xxxhdpi": 192,
-          }
-          for folder, px in sizes.items():
-              out_dir = os.path.join("android/app/src/main/res", folder)
-              os.makedirs(out_dir, exist_ok=True)
-              resized = img.resize((px, px), Image.Resampling.LANCZOS)
-              resized.save(os.path.join(out_dir, "ic_launcher.png"), "PNG")
-              resized.save(os.path.join(out_dir, "ic_launcher_round.png"), "PNG")
-          EOF
+          python3 -c "import os, glob, shutil; from PIL import Image; c = [f for p in ('assets/*', '../assets/*', '../*') for f in glob.glob(p) if os.path.isfile(f) and f.lower().endswith(('.png','.jpg','.jpeg','.webp'))]; assert c, 'No logo image found'; print('Using:', c[0]); img = Image.open(c[0]).convert('RGBA'); [shutil.rmtree(d, ignore_errors=True) for d in glob.glob('android/app/src/main/res/mipmap-anydpi*')]; [os.makedirs(f'android/app/src/main/res/{k}', exist_ok=True) or img.resize((v,v), Image.Resampling.LANCZOS).save(f'android/app/src/main/res/{k}/ic_launcher.png') or img.resize((v,v), Image.Resampling.LANCZOS).save(f'android/app/src/main/res/{k}/ic_launcher_round.png') for k,v in {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}.items()]"
 
       - name: Install Packages
         run: flutter pub get
