@@ -72,18 +72,81 @@ jobs:
           systemProp.http.maxConnections=4
           EOF
 
-      - name: Repair Android Project & Keep Castex Code
+      - name: Repair Android Project & Lock Permanent Castex Icon
         working-directory: app
         run: |
           mkdir -p /tmp/castex_backup
           cp -r lib /tmp/castex_backup/lib
           cp pubspec.yaml /tmp/castex_backup/pubspec.yaml
+          if [ -d "assets" ]; then cp -r assets /tmp/castex_backup/assets; fi
           rm -rf android
           flutter create . --platforms=android --org com.castex.app --project-name castex
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="castex"/android:label="Castex"/' android/app/src/main/AndroidManifest.xml
           rm -rf lib
           cp -r /tmp/castex_backup/lib lib
           cp /tmp/castex_backup/pubspec.yaml pubspec.yaml
+          if [ -d "/tmp/castex_backup/assets" ]; then cp -r /tmp/castex_backup/assets assets; fi
+
+          python3 -m pip install --quiet pillow
+          python3 - << 'PYEOF'
+          import os
+          from PIL import Image, ImageDraw
+
+          custom_paths = ["assets/logo.png", "assets/icon.png", "logo.png"]
+          base_icon = None
+          for p in custom_paths:
+              if os.path.exists(p):
+                  base_icon = Image.open(p).convert("RGBA")
+                  print(f"Loaded custom logo from {p}")
+                  break
+
+          if base_icon is None:
+              size = 512
+              base_icon = Image.new("RGBA", (size, size), (6, 8, 13, 255))
+              draw = ImageDraw.Draw(base_icon)
+              # Signature Castex Liger OLED Emblem
+              draw.rounded_rectangle([20, 20, size-20, size-20], radius=116, fill=(10, 13, 20, 255), outline=(255, 42, 85, 255), width=18)
+              draw.rounded_rectangle([46, 46, size-46, size-46], radius=94, outline=(0, 212, 255, 130), width=6)
+              draw.polygon([(190, 148), (190, 364), (372, 256)], fill=(255, 42, 85, 255))
+              draw.polygon([(222, 192), (222, 320), (334, 256)], fill=(255, 255, 255, 248))
+              print("Generated Signature Castex Liger Emblem")
+
+          res_dir = "android/app/src/main/res"
+          densities = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+          for folder, px in densities.items():
+              out_dir = os.path.join(res_dir, folder)
+              os.makedirs(out_dir, exist_ok=True)
+              resized = base_icon.resize((px, px), Image.Resampling.LANCZOS)
+              resized.save(os.path.join(out_dir, "ic_launcher.png"), "PNG")
+              resized.save(os.path.join(out_dir, "ic_launcher_round.png"), "PNG")
+
+          # Force remove default Flutter adaptive XMLs and replace with Castex PNG adaptive icon
+          anydpi = os.path.join(res_dir, "mipmap-anydpi-v26")
+          os.makedirs(anydpi, exist_ok=True)
+          fg_dir = os.path.join(res_dir, "drawable-xxxhdpi")
+          os.makedirs(fg_dir, exist_ok=True)
+          fg = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
+          inner = base_icon.resize((292, 292), Image.Resampling.LANCZOS)
+          fg.paste(inner, (70, 70), inner)
+          fg.save(os.path.join(fg_dir, "ic_launcher_foreground.png"), "PNG")
+
+          bg_dir = os.path.join(res_dir, "values")
+          os.makedirs(bg_dir, exist_ok=True)
+          with open(os.path.join(bg_dir, "ic_launcher_background.xml"), "w") as bf:
+              bf.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#06080D</color>\n</resources>\n')
+
+          xml_body = '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@color/ic_launcher_background"/>\n    <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n</adaptive-icon>\n'
+          for xml_name in ["ic_launcher.xml", "ic_launcher_round.xml"]:
+              with open(os.path.join(anydpi, xml_name), "w") as xf:
+                  xf.write(xml_body)
+          PYEOF
 
       - name: Install Flutter Dependencies
         working-directory: app
