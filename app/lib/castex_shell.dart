@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -367,7 +368,7 @@ class _ProfilePinGateScreenState extends State<ProfilePinGateScreen> {
 }
 
 // ============================================================================
-// SIGNATURE CASTEX SHELL (120HZ OPTIMIZED WITH VALUE NOTIFIERS)
+// SIGNATURE CASTEX LIGER SHELL (4-MODE LIQUID GLASS + 120HZ OPTIMIZED)
 // ============================================================================
 class MainShellScreen extends StatefulWidget {
   final CastexController controller;
@@ -389,6 +390,87 @@ class _MainShellScreenState extends State<MainShellScreen> {
     if (compact != _compactDockNotifier.value) {
       _compactDockNotifier.value = compact;
     }
+  }
+
+  void _showLiquidGlassSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0D1016),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) {
+          final app = widget.controller.appearance;
+          const descriptions = {
+            'Off': 'Pure #000000 AMOLED Black • Maximum battery & sharp text',
+            'Crystal Frost': 'Translucent frosted glass + specular edge border',
+            'Liquid Prism': 'Adaptive poster aura glow + vibrant tinted glass',
+            'Smoke Obsidian': 'Deep smoked charcoal glass • Low-glare cinema depth',
+          };
+
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, color: app.accentColor),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Liquid Glass Engine (4 Modes)',
+                      style:
+                          TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...CastexAppearance.glassModes.map((mode) {
+                  final selected = app.liquidGlassMode == mode;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? app.accentColor.withOpacity(0.18)
+                          : Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: selected ? app.accentColor : Colors.white12,
+                      ),
+                    ),
+                    child: ListTile(
+                      title: Text(
+                        mode,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        descriptions[mode] ?? '',
+                        style: const TextStyle(
+                            color: Colors.white60, fontSize: 11.5),
+                      ),
+                      trailing: Icon(
+                        selected
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_off_rounded,
+                        color: selected ? app.accentColor : Colors.white38,
+                      ),
+                      onTap: () {
+                        widget.controller.updateAppearance(
+                          (a) => a.liquidGlassMode = mode,
+                        );
+                        setModal(() {});
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _showNotificationsSheet() {
@@ -443,22 +525,30 @@ class _MainShellScreenState extends State<MainShellScreen> {
       backgroundColor: app.bgColor,
       body: Stack(
         children: [
-          // Lightweight RepaintBoundary Aura Header
+          // 4-Mode Liquid Glass Ambient Backdrop Layer
           RepaintBoundary(
             child: ValueListenableBuilder<Color>(
               valueListenable: _auraNotifier,
               builder: (_, auraColor, __) {
                 final activeColor =
                     app.autoPosterAura ? auraColor : app.accentColor;
+                final double topOpacity = app.liquidGlassMode == 'Liquid Prism'
+                    ? 0.34
+                    : app.liquidGlassMode == 'Crystal Frost'
+                        ? 0.20
+                        : app.liquidGlassMode == 'Smoke Obsidian'
+                            ? 0.14
+                            : 0.16;
+
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 450),
-                  height: 250,
+                  height: app.liquidGlassMode == 'Liquid Prism' ? 320 : 230,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        activeColor.withOpacity(0.24),
+                        activeColor.withOpacity(topOpacity),
                         app.bgColor.withOpacity(0.0),
                       ],
                     ),
@@ -472,7 +562,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             bottom: false,
             child: Column(
               children: [
-                // Castex Minimal Header Bar
+                // Castex Minimal Header Bar with Quick Liquid Glass Button
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -503,22 +593,45 @@ class _MainShellScreenState extends State<MainShellScreen> {
                           letterSpacing: 2.5,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.controller.syncStatus,
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 10.5,
+                      const Spacer(),
+                      // 1-Tap Liquid Glass Mode Pill
+                      GestureDetector(
+                        onTap: _showLiquidGlassSheet,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: app.cardColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: app.glassBorderColor),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.blur_on_rounded,
+                                  size: 13, color: app.accentColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                app.liquidGlassMode == 'Off'
+                                    ? 'AMOLED'
+                                    : app.liquidGlassMode.split(' ').last.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 6),
                       GestureDetector(
                         onTap: () => widget.controller.updateAppearance(
                           (a) => a.fanMode = !a.fanMode,
                         ),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                              horizontal: 9, vertical: 5),
                           decoration: BoxDecoration(
                             color: app.cardColor,
                             borderRadius: BorderRadius.circular(8),
@@ -530,10 +643,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
                           ),
                           child: Text(
                             widget.controller.effectiveFanMode
-                                ? 'FAN ENGINE'
-                                : 'STANDARD',
+                                ? 'FAN'
+                                : 'SIMPLE',
                             style: TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w800,
                               color: widget.controller.effectiveFanMode
                                   ? app.accentColor
@@ -575,7 +688,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
           ),
 
-          // Zero-Blur Lightweight 120Hz Floating Capsule Bar
+          // 4-Mode Liquid Glass Floating Capsule Dock (RepaintBoundary 120Hz Safe)
           Positioned(
             left: 0,
             right: 0,
@@ -598,7 +711,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         ];
                         const labels = ['Stage', 'Discover', 'Vault', 'Me'];
 
-                        return AnimatedContainer(
+                        final dockContent = AnimatedContainer(
                           duration: const Duration(milliseconds: 220),
                           curve: Curves.easeOutCubic,
                           padding: EdgeInsets.symmetric(
@@ -606,14 +719,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             vertical: compact ? 6 : 8,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xEE10131A),
+                            color: app.dockColor,
                             borderRadius: BorderRadius.circular(26),
-                            border: Border.all(color: Colors.white12),
-                            boxShadow: const [
+                            border: Border.all(color: app.glassBorderColor),
+                            boxShadow: [
                               BoxShadow(
-                                color: Colors.black87,
-                                blurRadius: 16,
-                                offset: Offset(0, 6),
+                                color: app.liquidGlassMode == 'Liquid Prism'
+                                    ? app.accentColor.withOpacity(0.22)
+                                    : Colors.black87,
+                                blurRadius: 18,
+                                offset: const Offset(0, 6),
                               ),
                             ],
                           ),
@@ -633,7 +748,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: selected
-                                        ? app.accentColor.withOpacity(0.22)
+                                        ? app.accentColor.withOpacity(0.24)
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(20),
                                   ),
@@ -671,6 +786,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
                                 ),
                               );
                             }),
+                          ),
+                        );
+
+                        if (!app.isGlassEnabled) return dockContent;
+
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(26),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(
+                              sigmaX: app.glassBlurSigma,
+                              sigmaY: app.glassBlurSigma,
+                            ),
+                            child: dockContent,
                           ),
                         );
                       },

@@ -10,7 +10,7 @@ typedef JsonMap = Map<String, dynamic>;
 // 1. CASTEX CORE CONFIGURATION
 // ============================================================================
 class CastexConfig {
-  static const String appVersion = '1.0.0-modular';
+  static const String appVersion = '1.0.0-liger-s1';
   static const String firebaseApiKey =
       'AIzaSyCgbpacxuwoJgwheOFlk_Vln4nWgnZ4FCc';
   static const String firebaseDbUrl =
@@ -21,10 +21,11 @@ class CastexConfig {
 }
 
 // ============================================================================
-// 2. THEME & APPEARANCE MODEL
+// 2. THEME & 4-MODE LIQUID GLASS APPEARANCE MODEL
 // ============================================================================
 class CastexAppearance {
   String accentHex;
+  String liquidGlassMode; // Off, Crystal Frost, Liquid Prism, Smoke Obsidian
   bool amoledBlack;
   bool autoPosterAura;
   String dockMode; // Adaptive, Expanded, Compact
@@ -37,8 +38,16 @@ class CastexAppearance {
   double subFontSize;
   double subBgOpacity;
 
+  static const List<String> glassModes = [
+    'Off',
+    'Crystal Frost',
+    'Liquid Prism',
+    'Smoke Obsidian',
+  ];
+
   CastexAppearance({
     this.accentHex = '#FF2A55',
+    this.liquidGlassMode = 'Liquid Prism',
     this.amoledBlack = true,
     this.autoPosterAura = true,
     this.dockMode = 'Adaptive',
@@ -52,6 +61,21 @@ class CastexAppearance {
     this.subBgOpacity = 0.58,
   });
 
+  bool get isGlassEnabled => liquidGlassMode != 'Off';
+
+  double get glassBlurSigma {
+    switch (liquidGlassMode) {
+      case 'Crystal Frost':
+        return 14.0;
+      case 'Liquid Prism':
+        return 18.0;
+      case 'Smoke Obsidian':
+        return 10.0;
+      default:
+        return 0.0;
+    }
+  }
+
   Color get accentColor {
     try {
       final clean = accentHex.replaceAll('#', '');
@@ -61,14 +85,58 @@ class CastexAppearance {
     }
   }
 
-  Color get bgColor =>
-      amoledBlack ? const Color(0xFF000000) : const Color(0xFF090B10);
+  Color get bgColor {
+    if (liquidGlassMode == 'Off') {
+      return amoledBlack ? const Color(0xFF000000) : const Color(0xFF090B10);
+    }
+    if (liquidGlassMode == 'Smoke Obsidian') {
+      return const Color(0xFF050608);
+    }
+    return const Color(0xFF030407);
+  }
 
-  Color get cardColor =>
-      amoledBlack ? const Color(0xFF0D1016) : const Color(0xFF141822);
+  Color get cardColor {
+    switch (liquidGlassMode) {
+      case 'Crystal Frost':
+        return Colors.white.withOpacity(0.08);
+      case 'Liquid Prism':
+        return accentColor.withOpacity(0.11);
+      case 'Smoke Obsidian':
+        return const Color(0xCC0E1118);
+      default:
+        return amoledBlack ? const Color(0xFF0D1016) : const Color(0xFF141822);
+    }
+  }
+
+  Color get dockColor {
+    switch (liquidGlassMode) {
+      case 'Crystal Frost':
+        return const Color(0xB8181D28);
+      case 'Liquid Prism':
+        return const Color(0xC2131622);
+      case 'Smoke Obsidian':
+        return const Color(0xE60B0D13);
+      default:
+        return const Color(0xF510131A);
+    }
+  }
+
+  Color get glassBorderColor {
+    switch (liquidGlassMode) {
+      case 'Crystal Frost':
+        return Colors.white.withOpacity(0.24);
+      case 'Liquid Prism':
+        return accentColor.withOpacity(0.42);
+      case 'Smoke Obsidian':
+        return Colors.white.withOpacity(0.14);
+      default:
+        return Colors.white12;
+    }
+  }
 
   JsonMap toJson() => {
         'accentHex': accentHex,
+        'liquidGlassMode': liquidGlassMode,
         'amoledBlack': amoledBlack,
         'autoPosterAura': autoPosterAura,
         'dockMode': dockMode,
@@ -84,8 +152,10 @@ class CastexAppearance {
 
   factory CastexAppearance.fromJson(JsonMap? json) {
     if (json == null) return CastexAppearance();
+    final mode = json['liquidGlassMode']?.toString() ?? 'Liquid Prism';
     return CastexAppearance(
       accentHex: json['accentHex']?.toString() ?? '#FF2A55',
+      liquidGlassMode: glassModes.contains(mode) ? mode : 'Liquid Prism',
       amoledBlack: json['amoledBlack'] ?? true,
       autoPosterAura: json['autoPosterAura'] ?? true,
       dockMode: json['dockMode']?.toString() ?? 'Adaptive',
@@ -891,19 +961,16 @@ class CastexAddonEngine {
       } catch (_) {}
     }
 
-    // Always append fallback playable streams so player never dead-ends
     resolved.addAll(episode.streams);
     return resolved;
   }
 
-  // Real KotoSub AI Subtitle Fetcher + SRT/VTT Parser
   static Future<List<TimedSubtitleCue>> fetchKotoSubCues({
     required String mediaTitle,
     required String episodeTitle,
     required String targetLang,
     String? customSrtUrl,
   }) async {
-    // 1. Try custom SRT/VTT URL if provided
     if (customSrtUrl != null && customSrtUrl.trim().startsWith('http')) {
       try {
         final res = await http
@@ -916,7 +983,6 @@ class CastexAddonEngine {
       } catch (_) {}
     }
 
-    // 2. Query Render KotoSub Backend
     try {
       final uri = Uri.parse('${CastexConfig.kotoSubServerUrl}/subtitles').replace(
         queryParameters: {
@@ -949,7 +1015,6 @@ class CastexAddonEngine {
       }
     } catch (_) {}
 
-    // 3. Dynamic Title-Aware Fallback Cues (Never hardcoded to one anime!)
     return [
       TimedSubtitleCue(
         start: const Duration(seconds: 0),
@@ -1082,9 +1147,9 @@ class CastexController extends ChangeNotifier {
 
   final List<AppNotification> notifications = const [
     AppNotification(
-      title: 'Castex Modular Core Active',
+      title: 'Castex Liger Step 1 Active',
       body:
-          '120Hz smooth rendering, live Stremio search, Brightness/Volume swipe player & KotoSub SRT parser ready.',
+          'Permanent Castex Emblem & 4-Mode Liquid Glass (Off, Crystal Frost, Liquid Prism, Smoke Obsidian) ready.',
       time: 'Now',
     ),
     AppNotification(
